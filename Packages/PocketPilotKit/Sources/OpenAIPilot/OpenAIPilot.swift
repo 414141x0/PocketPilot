@@ -84,7 +84,7 @@ public struct OpenAIPilot: Pilot {
     private static func actionSchema(_ kind: String, _ properties: [String: JSONSchema] = [:]) -> JSONSchema {
         var props = properties
         props["kind"] = .init(.const(kind))
-        return .init(.properties(props), .required(Array(props.keys)), .additionalProperties(.boolean(false)))
+        return .init(.type(.object), .properties(props), .required(props.keys.sorted()), .additionalProperties(.boolean(false)))
     }
 
     private struct Reply: Decodable {
@@ -118,19 +118,9 @@ public struct OpenAIPilot: Pilot {
             case "tap": self = .tap(elementId: try c.decode(Int.self, forKey: .elementId))
             case "tap_point": self = .tapPoint(x: try c.decode(Int.self, forKey: .x), y: try c.decode(Int.self, forKey: .y))
             case "long_press": self = .longPress(elementId: try c.decode(Int.self, forKey: .elementId))
-            case "scroll":
-                let rawDir = try c.decode(String.self, forKey: .direction)
-                guard let dir = Direction(rawValue: rawDir) else {
-                    throw DecodingError.dataCorruptedError(forKey: .direction, in: c, debugDescription: "Invalid direction: \(rawDir)")
-                }
-                self = .scroll(direction: dir, elementId: try c.decodeIfPresent(Int.self, forKey: .elementId))
+            case "scroll": self = .scroll(direction: try c.decode(Direction.self, forKey: .direction), elementId: try c.decodeIfPresent(Int.self, forKey: .elementId))
             case "type": self = .type(text: try c.decode(String.self, forKey: .text))
-            case "press":
-                let rawBtn = try c.decode(String.self, forKey: .button)
-                guard let btn = HardwareButton(rawValue: rawBtn) else {
-                    throw DecodingError.dataCorruptedError(forKey: .button, in: c, debugDescription: "Invalid button: \(rawBtn)")
-                }
-                self = .press(button: btn)
+            case "press": self = .press(button: try c.decode(HardwareButton.self, forKey: .button))
             case "open": self = .open(bundleId: try c.decode(String.self, forKey: .bundleId))
             case "wait": self = .wait(seconds: try c.decode(Double.self, forKey: .seconds))
             case "done": self = .done(summary: try c.decode(String.self, forKey: .summary))
