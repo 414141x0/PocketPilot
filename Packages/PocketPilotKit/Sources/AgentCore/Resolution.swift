@@ -1,0 +1,66 @@
+extension Action {
+    /// The concrete gesture for this action on the observed screen, or `nil`
+    /// when the action needs no input (waiting, finishing).
+    public func gesture(in observation: Observation) throws(ResolutionError) -> Gesture? {
+        switch self {
+        case .tap(let target): .tap(try observation.point(for: target))
+        case .longPress(let target): .longPress(try observation.point(for: target))
+        case .scroll(let direction, let target): .swipe(direction, in: try observation.frame(for: target))
+        case .type(let text): .type(text)
+        case .press(let button): .press(button)
+        case .open(let bundleID): .launch(bundleID: bundleID)
+        case .wait, .done, .giveUp: nil
+        }
+    }
+}
+
+public enum ResolutionError: Error, Sendable, Hashable, CustomStringConvertible {
+    case unknownElement(Element.ID)
+
+    public var description: String {
+        switch self {
+        case .unknownElement(let id): "No element with id \(id) is on screen."
+        }
+    }
+}
+
+extension Observation {
+    func point(for target: Target) throws(ResolutionError) -> Point {
+        switch target {
+        case .point(let point): point
+        case .element(let id): try element(id).frame.center
+        }
+    }
+
+    func frame(for target: Target?) throws(ResolutionError) -> Rect {
+        switch target {
+        case nil: .fullScreen
+        case .point(let point): Rect(x: point.x - 0.25, y: point.y - 0.25, width: 0.5, height: 0.5)
+        case .element(let id): try element(id).frame
+        }
+    }
+
+    private func element(_ id: Element.ID) throws(ResolutionError) -> Element {
+        guard let element = self[id] else { throw .unknownElement(id) }
+        return element
+    }
+}
+
+extension Rect {
+    static let fullScreen = Rect(x: 0, y: 0, width: 1, height: 1)
+}
+
+extension Gesture {
+    /// A swipe that scrolls `region`'s content toward `direction`; the finger travels the opposite way.
+    static func swipe(_ direction: Direction, in region: Rect) -> Gesture {
+        let center = region.center
+        let dx = region.width * 0.3, dy = region.height * 0.3
+        let (start, end): (Point, Point) = switch direction {
+        case .down: (Point(x: center.x, y: center.y + dy), Point(x: center.x, y: center.y - dy))
+        case .up: (Point(x: center.x, y: center.y - dy), Point(x: center.x, y: center.y + dy))
+        case .right: (Point(x: center.x + dx, y: center.y), Point(x: center.x - dx, y: center.y))
+        case .left: (Point(x: center.x - dx, y: center.y), Point(x: center.x + dx, y: center.y))
+        }
+        return .swipe(from: start, to: end)
+    }
+}

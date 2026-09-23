@@ -1,0 +1,49 @@
+/// Something the agent chooses to do next.
+///
+/// Actions are phrased the way a model thinks ("tap the Send button", "scroll down").
+/// The ``Agent`` resolves them into concrete ``Gesture``s against the current screen.
+public enum Action: Sendable, Hashable, Codable {
+    case tap(Target)
+    case longPress(Target)
+    case scroll(Direction, in: Target? = nil)
+    case type(String)
+    case press(HardwareButton)
+    case open(bundleID: String)
+    case wait(seconds: Double)
+    /// The goal is achieved; `summary` is reported back to the user.
+    case done(summary: String)
+    /// The goal cannot be achieved; `reason` is reported back to the user.
+    case giveUp(reason: String)
+
+    /// Whether this action ends the run.
+    public var isTerminal: Bool {
+        switch self {
+        case .done, .giveUp: true
+        default: false
+        }
+    }
+}
+
+/// Where an action lands: an accessibility element when one is known, otherwise a raw point.
+public enum Target: Sendable, Hashable, Codable {
+    case element(Element.ID)
+    case point(Point)
+}
+
+public enum Direction: String, Sendable, Hashable, Codable, CaseIterable {
+    case up, down, left, right
+}
+
+public enum HardwareButton: String, Sendable, Hashable, Codable, CaseIterable {
+    case home, lock, volumeUp, volumeDown
+}
+
+/// A device-level input with every target resolved to coordinates.
+public enum Gesture: Sendable, Hashable {
+    case tap(Point)
+    case longPress(Point, duration: Duration = .seconds(1))
+    case swipe(from: Point, to: Point, duration: Duration = .milliseconds(300))
+    case type(String)
+    case press(HardwareButton)
+    case launch(bundleID: String)
+}
