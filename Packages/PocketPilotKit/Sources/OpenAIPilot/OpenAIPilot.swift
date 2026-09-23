@@ -24,23 +24,6 @@ public struct OpenAIPilot: Pilot {
     }
 
     public func decide(_ step: Step) async throws -> Decision {
-        let systemInstructions = """
-        You are an autonomous iOS agent operating an iPhone on-device.
-        Your goal is to achieve the user's objective by observing the screen and returning exactly one action.
-        You have accessibility tree outlines with integer grid coordinates (0...1000) and screenshots.
-        Always explain your thinking in `thought`, then select the most appropriate action.
-        """
-
-        let userPrompt = """
-        Goal: \(step.goal)
-
-        History:
-        \(step.historyOutline.isEmpty ? "(first step)" : step.historyOutline)
-
-        Screen Elements:
-        \(step.screen.outline())
-        """
-
         var contentItems: [InputContent] = []
 
         if let jpegData = await step.screen.screenshot.jpeg() {
@@ -48,7 +31,7 @@ public struct OpenAIPilot: Pilot {
             contentItems.append(.inputImage(inputImage))
         }
 
-        let textContent = Components.Schemas.InputTextContent(_type: .inputText, text: userPrompt)
+        let textContent = Components.Schemas.InputTextContent(_type: .inputText, text: step.brief())
         contentItems.append(.inputText(textContent))
 
         let message = EasyInputMessage(role: .user, content: .inputItemContentList(contentItems))
@@ -58,7 +41,7 @@ public struct OpenAIPilot: Pilot {
         let query = CreateModelResponseQuery(
             input: .inputItemList([inputItem]),
             model: model,
-            instructions: systemInstructions,
+            instructions: Self.instructions,
             toolChoice: .ToolChoiceFunction(.init(_type: .function, name: decisionTool.name)),
             tools: [.functionTool(decisionTool)]
         )

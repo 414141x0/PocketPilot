@@ -18,34 +18,12 @@ public struct SystemPilot: Pilot {
             throw SystemPilotError.modelUnavailable(model.availability)
         }
 
-        let instructions = """
-        You are an on-device iOS assistant that operates an iPhone.
-        Observe the screen outline and screenshot image to decide the next action toward the user's goal.
-        Provide a concise thought explaining your step, then populate the action fields.
-        Coordinates are on a 1000x1000 grid.
-        """
-
-        let historySlice = step.history.suffix(maxHistoryTurns)
-        let historyText: String
-        if historySlice.isEmpty {
-            historyText = "(first step)"
-        } else {
-            historyText = historySlice.enumerated().map { idx, turn in
-                var line = "\(idx + 1). \(turn.decision.action)"
-                if let failure = turn.failure { line += " — failed: \(failure)" }
-                return line
-            }.joined(separator: "\n")
-        }
-
         let prompt = Prompt {
-            "Goal: \(step.goal)\n\n"
-            "History (recent):\n\(historyText)\n\n"
-            "Screen Elements:\n\(step.screen.outline())\n\n"
-            "Current display screenshot:"
+            step.brief(historyLimit: maxHistoryTurns)
             Attachment(step.screen.screenshot.image).label("screenshot")
         }
 
-        let session = LanguageModelSession(model: model, instructions: instructions)
+        let session = LanguageModelSession(model: model, instructions: Self.instructions)
         let response = try await session.respond(to: prompt, generating: SystemDecisionPayload.self)
         return try await Self.mapDecision(response.content)
     }
