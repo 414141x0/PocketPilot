@@ -4,7 +4,7 @@ import SwiftUI
 
 struct RunView: View {
     let setup: Setup
-    @State private var model = RunModel()
+    let model: RunModel
     @State private var goal = ""
     @State private var isShowingSetup = false
 
