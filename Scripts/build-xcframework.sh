@@ -16,11 +16,6 @@ if ! command -v rustup >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v cbindgen >/dev/null 2>&1; then
-  echo "error: cbindgen is required (install with: cargo install cbindgen)" >&2
-  exit 1
-fi
-
 # Homebrew's rustc may precede rustup's proxy in PATH. Cargo otherwise silently
 # invokes that compiler, which cannot see rustup's installed iOS standard libraries.
 export RUSTC
@@ -40,12 +35,16 @@ for target in "${TARGETS[@]}"; do
 done
 
 mkdir -p "$BUILD_DIR/include" "$(dirname "$OUTPUT")"
-cbindgen \
-  --verify \
-  --config "$CRATE_DIR/cbindgen.toml" \
-  --crate pilot_bridge \
-  --output "$CRATE_DIR/include/pilot_bridge.h" \
-  "$CRATE_DIR"
+if command -v cbindgen >/dev/null 2>&1; then
+  cbindgen \
+    --verify \
+    --config "$CRATE_DIR/cbindgen.toml" \
+    --crate pilot_bridge \
+    --output "$CRATE_DIR/include/pilot_bridge.h" \
+    "$CRATE_DIR"
+else
+  echo "warning: cbindgen not found; using committed pilot_bridge.h without verification" >&2
+fi
 cp "$CRATE_DIR/include/pilot_bridge.h" "$BUILD_DIR/include/pilot_bridge.h"
 cp "$CRATE_DIR/include/module.modulemap" "$BUILD_DIR/include/module.modulemap"
 
