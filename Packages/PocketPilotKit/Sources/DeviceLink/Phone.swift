@@ -16,7 +16,8 @@ public struct Phone: Device {
     }
 
     public func observe() async throws(DeviceError) -> Screen {
-        Screen(screenshot: try await screenshot())
+        let screenshot = try await screenshot()
+        return Screen(screenshot: screenshot, elements: await screenshot.recognizedText())
     }
 
     public func perform(_ gesture: Gesture) async throws(DeviceError) {
