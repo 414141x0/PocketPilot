@@ -1,3 +1,4 @@
+#if canImport(ScreenCaptureKit)
 public import AgentCore
 import CoreMedia
 import ScreenCaptureKit
@@ -160,3 +161,4 @@ private final class DisplayPicker: NSObject, SCContentSharingPickerObserver {
         continuation = nil
     }
 }
+#endif
