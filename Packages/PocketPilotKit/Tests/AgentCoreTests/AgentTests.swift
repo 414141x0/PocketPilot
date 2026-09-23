@@ -145,3 +145,32 @@ extension Screenshot {
         #expect(Step(goal: "g", screen: step.screen).historyOutline() == "(none yet)")
     }
 }
+
+@Suite struct FallbackTests {
+    struct Failing: Pilot {
+        let error: any Error
+        func decide(_ step: Step) async throws -> Decision { throw error }
+    }
+
+    struct Fixed: Pilot {
+        let action: Action
+        func decide(_ step: Step) async throws -> Decision { Decision(action: action) }
+    }
+
+    let step = Step(goal: "g", screen: Screen(screenshot: .blank(width: 1, height: 1)))
+
+    @Test func usesBackupWhenPrimaryFails() async throws {
+        let pilot = Failing(error: DeviceError.timedOut).fallback(to: Fixed(action: .press(.home)))
+        #expect(try await pilot.decide(step).action == .press(.home))
+    }
+
+    @Test func prefersPrimary() async throws {
+        let pilot = Fixed(action: .type("a")).fallback(to: Fixed(action: .type("b")))
+        #expect(try await pilot.decide(step).action == .type("a"))
+    }
+
+    @Test func doesNotFallBackOnCancellation() async {
+        let pilot = Failing(error: CancellationError()).fallback(to: Fixed(action: .press(.home)))
+        await #expect(throws: CancellationError.self) { try await pilot.decide(step) }
+    }
+}
