@@ -3,8 +3,10 @@ import SwiftUI
 
 struct RunView: View {
     let agent: Agent?
+    let setup: Setup
     @State private var model = RunModel()
     @State private var goal = ""
+    @State private var isShowingSetup = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +32,22 @@ struct RunView: View {
                 ToolbarItem(placement: .status) {
                     PhaseLabel(phase: model.phase)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Setup", systemImage: "gearshape") { isShowingSetup = true }
+                }
+            }
+            .sheet(isPresented: $isShowingSetup) {
+                NavigationStack {
+                    SetupView(setup: setup)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done", systemImage: "checkmark") { isShowingSetup = false }
+                            }
+                        }
+                }
+            }
+            .task {
+                isShowingSetup = !setup.isReady
             }
         }
     }

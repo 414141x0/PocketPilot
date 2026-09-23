@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000101 /* AgentCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000201 /* AgentCore */; };
+		A10000000000000000000102 /* DeviceLink in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000202 /* DeviceLink */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000101 /* AgentCore in Frameworks */,
+				A10000000000000000000102 /* DeviceLink in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +69,7 @@
 			name = PocketPilot;
 			packageProductDependencies = (
 				A10000000000000000000201 /* AgentCore */,
+				A10000000000000000000202 /* DeviceLink */,
 			);
 			productName = PocketPilot;
 			productReference = A10000000000000000000301 /* PocketPilot.app */;
@@ -259,6 +262,10 @@
 		A10000000000000000000201 /* AgentCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgentCore;
+		};
+		A10000000000000000000202 /* DeviceLink */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DeviceLink;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
