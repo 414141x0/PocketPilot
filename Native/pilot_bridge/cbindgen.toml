@@ -1,0 +1,29 @@
+language = "C"
+include_guard = "PILOT_BRIDGE_H"
+pragma_once = true
+documentation = true
+usize_is_size_t = true
+
+[export]
+include = [
+    "PP_Error",
+    "PP_Button",
+    "PP_Session",
+    "PP_CompletionCallback",
+    "PP_BytesCallback",
+    "PP_SizeCallback",
+    "pp_session_open",
+    "pp_session_close",
+    "pp_screenshot",
+    "pp_tap",
+    "pp_long_press",
+    "pp_swipe",
+    "pp_type_text",
+    "pp_press",
+    "pp_launch_app",
+    "pp_screen_size",
+    "pp_ax_snapshot",
+]
+
+[enum]
+prefix_with_name = true

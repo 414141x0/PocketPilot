@@ -1,0 +1,20 @@
+[package]
+name = "pilot_bridge"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+idevice = { git = "https://github.com/jkcoxson/idevice", rev = "d32c8189c51c2789496b0768039419c3705498c3", default-features = false, features = [
+    "core_device_proxy",
+    "display_stream",
+    "ring",
+    "tcp",
+    "tunnel_tcp_stack",
+] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
