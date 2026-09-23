@@ -1,4 +1,5 @@
 public import AgentCore
+import Foundation
 import ImageIO
 
 /// This iPhone as an agent ``Device``: CoreDevice input through the bridge,
@@ -40,10 +41,14 @@ public struct Phone: Device {
                 // Fall through to CoreDevice when the stream has stopped or has no frame yet.
             }
         }
-        let png = try await session.screenshot()
-        guard let source = CGImageSourceCreateWithData(png as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else { throw .service("The device returned an unreadable screenshot.") }
+        guard let image = await Self.decode(try await session.screenshot()) else {
+            throw .service("The device returned an unreadable screenshot.")
+        }
         return Screenshot(image: image)
+    }
+
+    @concurrent
+    private static func decode(_ png: Data) async -> CGImage? {
+        CGImageSourceCreateWithData(png as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
     }
 }

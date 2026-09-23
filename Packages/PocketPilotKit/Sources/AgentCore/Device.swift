@@ -11,6 +11,8 @@ public enum DeviceError: Error, Sendable, Hashable {
     case pairingRejected
     /// The Developer Disk Image is not mounted, so CoreDevice services are absent.
     case developerImageMissing
+    /// The link to the device has closed; reconnect before continuing.
+    case disconnected
     case timedOut
     /// A device service failed; `message` is the underlying description.
     case service(String)

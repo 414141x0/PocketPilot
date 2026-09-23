@@ -17,6 +17,9 @@ public struct Agent: Sendable {
     /// Time given to the UI to finish animating before the next observation.
     public var settle: Duration
 
+    /// The longest pause a pilot may request, so a model can't stall a run.
+    static let longestWait = 30.0
+
     public init(device: some Device, pilot: some Pilot, maxSteps: Int = 40, settle: Duration = .milliseconds(700)) {
         self.device = device
         self.pilot = pilot
@@ -50,7 +53,7 @@ public struct Agent: Sendable {
             switch decision.action {
             case .done(let summary): return .completed(summary: summary)
             case .giveUp(let reason): return .abandoned(reason: reason)
-            case .wait(let seconds): try await Task.sleep(for: .seconds(seconds))
+            case .wait(let seconds): try await Task.sleep(for: .seconds(seconds.clamped(to: 0...Self.longestWait)))
             default: break
             }
 
@@ -85,7 +88,7 @@ extension DeviceError: CustomStringConvertible {
     public var isRecoverable: Bool {
         switch self {
         case .timedOut, .service: true
-        case .tunnelUnavailable, .pairingRejected, .developerImageMissing: false
+        case .tunnelUnavailable, .pairingRejected, .developerImageMissing, .disconnected: false
         }
     }
 
@@ -94,6 +97,7 @@ extension DeviceError: CustomStringConvertible {
         case .tunnelUnavailable: "LocalDevVPN is not connected."
         case .pairingRejected: "The pairing file was rejected by the device."
         case .developerImageMissing: "The Developer Disk Image is not mounted."
+        case .disconnected: "The connection to the device closed."
         case .timedOut: "The device did not respond in time."
         case .service(let message): message
         }

@@ -54,7 +54,7 @@ final class RunModel {
                 let phone = try await connection.phone(pairing: pairing)
                 let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
                 phase = .finished(outcome)
-            } catch is CancellationError {
+            } catch where Task.isCancelled {
                 phase = .idle
             } catch let error as DeviceError where !error.isRecoverable {
                 connection.reset()
@@ -78,7 +78,7 @@ final class RunModel {
         case .decided(let decision):
             entries.append(Entry(id: entries.count, thought: decision.thought, action: String(describing: decision.action)))
         case .failed(_, let reason):
-            entries[entries.index(before: entries.endIndex)].failure = reason
+            if let last = entries.indices.last { entries[last].failure = reason }
         }
     }
 }

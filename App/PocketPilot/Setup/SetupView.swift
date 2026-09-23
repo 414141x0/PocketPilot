@@ -47,7 +47,7 @@ private struct DeviceSection: View {
                     Circle()
                         .fill(hasPairing ? .green : .red)
                         .frame(width: 8, height: 8)
-                    Text(hasPairing ? "Imported" : "Missing")
+                    Text(hasPairing ? LocalizedStringResource("Imported") : "Missing")
                         .foregroundStyle(hasPairing ? Color.secondary : Color.red)
                 }
             }
@@ -71,6 +71,9 @@ private struct ModelSection: View {
     @Binding var brain: Setup.Brain
     @Binding var openAIKey: String
 
+    private let onDeviceNote: LocalizedStringResource = "Runs entirely on this iPhone with Apple's on-device model."
+    private let openAINote: LocalizedStringResource = "Sends each screenshot to OpenAI. Your API key is stored in the Keychain."
+
     var body: some View {
         Section {
             Picker("Pilot", selection: $brain) {
@@ -85,9 +88,7 @@ private struct ModelSection: View {
         } header: {
             Text("Model")
         } footer: {
-            Text(brain == .onDevice
-                ? "Runs completely on-device using Apple Intelligence FoundationModels."
-                : "Calls OpenAI Responses API using your API key stored securely in Keychain.")
+            Text(brain == .onDevice ? onDeviceNote : openAINote)
         }
     }
 }

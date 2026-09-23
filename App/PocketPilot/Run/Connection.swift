@@ -33,6 +33,8 @@ final class Connection {
 
     /// Drops the link so the next run reconnects, for example after LocalDevVPN restarts.
     func reset() {
+        connecting?.cancel()
+        connecting = nil
         phone = nil
         state = .disconnected
     }

@@ -101,6 +101,7 @@ extension DeviceError {
         switch error {
         case PP_Error_Ok: return nil
         case PP_Error_Connection: self = .tunnelUnavailable
+        case PP_Error_SessionClosed: self = .disconnected
         default: self = .service(detail)
         }
     }
