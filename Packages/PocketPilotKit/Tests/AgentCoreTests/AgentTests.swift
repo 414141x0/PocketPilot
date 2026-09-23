@@ -57,6 +57,17 @@ import Testing
         let element = Element(id: 3, role: .button, label: "Send", frame: Rect(x: 0.8, y: 0.9, width: 0.1, height: 0.02))
         #expect(element.outline == #"[3] button "Send" @(850,910)"#)
     }
+
+    @Test func outlineShowsValueTraitsAndTruncation() {
+        let field = Element(id: 4, role: .textField, label: "Message", value: "hi", frame: .fullScreen, traits: [.focused, .disabled])
+        let screen = Screen(screenshot: Screenshot(png: Data(), width: 10, height: 20), elements: [field, field])
+
+        #expect(screen.outline(limit: 1) == """
+            screen=10x20 elements=1/2
+            [4] textField "Message" = "hi" @(500,500) disabled focused
+            …+1 more
+            """)
+    }
 }
 
 private actor FakeDevice: Device {
