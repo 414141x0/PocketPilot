@@ -6,10 +6,12 @@ public import FoundationModels
 public struct SystemPilot: Pilot {
     private let model: SystemLanguageModel
     public let maxHistoryTurns: Int
+    private let overheadCache: OverheadCache
 
     public init(model: SystemLanguageModel = .default, maxHistoryTurns: Int = 5) {
         self.model = model
         self.maxHistoryTurns = maxHistoryTurns
+        self.overheadCache = OverheadCache()
     }
 
     public func decide(_ step: Step) async throws -> Decision {
@@ -17,12 +19,14 @@ public struct SystemPilot: Pilot {
             throw SystemPilotError.modelUnavailable(model.availability)
         }
 
+        let fixedCost = try await overheadCache.overhead(for: model)
+        let budget = max(0, model.contextSize - fixedCost)
+
         var historyLimit = maxHistoryTurns
         var elementLimit = 60
-        let contextSize = model.contextSize
 
         var prompt = makePrompt(step: step, historyLimit: historyLimit, elementLimit: elementLimit)
-        while try await model.tokenCount(for: prompt) > contextSize {
+        while try await model.tokenCount(for: prompt) > budget {
             if elementLimit > 20 {
                 elementLimit -= 10
             } else if historyLimit > 1 {
@@ -115,5 +119,18 @@ public enum SystemPilotError: LocalizedError, Sendable {
         case .modelUnavailable(let availability):
             "System language model is unavailable: \(availability)"
         }
+    }
+}
+
+private actor OverheadCache {
+    private var cached: Int?
+
+    func overhead(for model: SystemLanguageModel) async throws -> Int {
+        if let cached { return cached }
+        let instructionsTokens = try await model.tokenCount(for: Instructions(SystemPilot.instructions))
+        let schemaTokens = try await model.tokenCount(for: Reply.generationSchema)
+        let total = instructionsTokens + schemaTokens + 300
+        cached = total
+        return total
     }
 }

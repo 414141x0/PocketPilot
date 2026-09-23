@@ -1,4 +1,5 @@
 import AgentCore
+import CoreGraphics
 import DeviceLink
 import Foundation
 import Observation
@@ -34,15 +35,18 @@ final class RunModel {
 
     private(set) var phase = Phase.idle
     private(set) var entries: [Entry] = []
+    private(set) var latestScreenshot: CGImage?
     private var task: Task<Void, Never>?
     private let connection = Connection()
 
     var isRunning: Bool { task != nil }
+    var connectionState: Connection.State { connection.state }
 
     /// Connects on first use, then drives the chosen pilot toward `goal`.
     func start(_ goal: String, pairing: PairingFile, pilot: any Pilot) {
         guard !isRunning else { return }
         entries = []
+        latestScreenshot = nil
         phase = .connecting
         task = Task {
             defer { task = nil }
@@ -68,8 +72,9 @@ final class RunModel {
 
     private func record(_ event: Agent.Event) {
         switch event {
-        case .observed(_, let step):
+        case .observed(let screen, let step):
             phase = .running(step: step)
+            latestScreenshot = screen.screenshot.image
         case .decided(let decision):
             entries.append(Entry(id: entries.count, thought: decision.thought, action: String(describing: decision.action)))
         case .failed(_, let reason):
