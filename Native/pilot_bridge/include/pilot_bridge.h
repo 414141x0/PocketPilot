@@ -96,7 +96,7 @@ void pp_session_close(struct PP_Session *session);
 void pp_screenshot(struct PP_Session *session, PP_BytesCallback callback, void *context);
 
 /**
- * Taps a normalized point on the primary display.
+ * Taps a native-portrait normalized point on the primary display.
  *
  * # Safety
  *
@@ -109,7 +109,7 @@ void pp_tap(struct PP_Session *session,
             void *context);
 
 /**
- * Holds a normalized point for `duration_ms` milliseconds.
+ * Holds a native-portrait normalized point for `duration_ms` milliseconds.
  *
  * # Safety
  *
@@ -123,7 +123,7 @@ void pp_long_press(struct PP_Session *session,
                    void *context);
 
 /**
- * Swipes between normalized points over `duration_ms` milliseconds.
+ * Swipes between native-portrait normalized points over `duration_ms` milliseconds.
  *
  * # Safety
  *

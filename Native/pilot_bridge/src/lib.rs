@@ -318,11 +318,10 @@ impl ConnectedSession {
         png_dimensions(&png)
     }
 
-    async fn point(&mut self, x: f64, y: f64) -> Result<(u16, u16), BridgeError> {
+    fn point(x: f64, y: f64) -> Result<(u16, u16), BridgeError> {
         validate_normalized(x, "x")?;
         validate_normalized(y, "y")?;
-        let (width, height) = self.size().await?;
-        Ok((scale_coordinate(x, width), scale_coordinate(y, height)))
+        Ok((scale_coordinate(x), scale_coordinate(y)))
     }
 
     async fn run_command(&mut self, command: Command) -> bool {
@@ -330,7 +329,7 @@ impl ConnectedSession {
             Command::Screenshot(completion) => completion.finish(self.take_screenshot().await),
             Command::Tap { x, y, completion } => {
                 let result = async {
-                    let (x, y) = self.point(x, y).await?;
+                    let (x, y) = Self::point(x, y)?;
                     self.touch
                         .tap(x, y)
                         .await
@@ -346,7 +345,7 @@ impl ConnectedSession {
                 completion,
             } => {
                 let result = async {
-                    let (x, y) = self.point(x, y).await?;
+                    let (x, y) = Self::point(x, y)?;
                     self.touch
                         .send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, None)
                         .await
@@ -371,8 +370,8 @@ impl ConnectedSession {
                 completion,
             } => {
                 let result = async {
-                    let (x0, y0) = self.point(x0, y0).await?;
-                    let (x1, y1) = self.point(x1, y1).await?;
+                    let (x0, y0) = Self::point(x0, y0)?;
+                    let (x1, y1) = Self::point(x1, y1)?;
                     let steps = duration_ms.div_ceil(16).max(1);
                     let delay_ms = u64::from(duration_ms / steps);
                     self.touch
@@ -710,9 +709,8 @@ fn validate_normalized(value: f64, name: &str) -> Result<(), BridgeError> {
     }
 }
 
-fn scale_coordinate(value: f64, extent: u32) -> u16 {
-    let maximum = extent.saturating_sub(1).min(u16::MAX.into());
-    (value * f64::from(maximum)).round() as u16
+fn scale_coordinate(value: f64) -> u16 {
+    (value * f64::from(u16::MAX)).round() as u16
 }
 
 fn png_dimensions(bytes: &[u8]) -> Result<(u32, u32), BridgeError> {
@@ -916,7 +914,7 @@ pub unsafe extern "C" fn pp_screenshot(
     );
 }
 
-/// Taps a normalized point on the primary display.
+/// Taps a native-portrait normalized point on the primary display.
 ///
 /// # Safety
 ///
@@ -939,7 +937,7 @@ pub unsafe extern "C" fn pp_tap(
     );
 }
 
-/// Holds a normalized point for `duration_ms` milliseconds.
+/// Holds a native-portrait normalized point for `duration_ms` milliseconds.
 ///
 /// # Safety
 ///
@@ -964,7 +962,7 @@ pub unsafe extern "C" fn pp_long_press(
     );
 }
 
-/// Swipes between normalized points over `duration_ms` milliseconds.
+/// Swipes between native-portrait normalized points over `duration_ms` milliseconds.
 ///
 /// # Safety
 ///
@@ -1142,10 +1140,10 @@ mod tests {
     }
 
     #[test]
-    fn scales_normalized_coordinates_to_pixels() {
-        assert_eq!(scale_coordinate(0.0, 1179), 0);
-        assert_eq!(scale_coordinate(0.5, 1179), 589);
-        assert_eq!(scale_coordinate(1.0, 1179), 1178);
+    fn scales_normalized_coordinates_to_hid_range() {
+        assert_eq!(scale_coordinate(0.0), 0);
+        assert_eq!(scale_coordinate(0.5), 32_768);
+        assert_eq!(scale_coordinate(1.0), 65_535);
     }
 
     #[test]
