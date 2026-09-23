@@ -1,3 +1,5 @@
+mod ax;
+
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::net::IpAddr;
 use std::ptr;
@@ -232,6 +234,7 @@ struct ConnectedSession {
     keyboard: IndigoHidClient<Box<dyn ReadWrite>>,
     apps: AppServiceClient<Box<dyn ReadWrite>>,
     display: DisplayServiceClient<Box<dyn ReadWrite>>,
+    ax: Result<ax::AxClient, String>,
     _adapter: AdapterHandle,
     _handshake: RsdHandshake,
     screen_size: Option<(u32, u32)>,
@@ -287,6 +290,7 @@ impl ConnectedSession {
         let keyboard = IndigoHidClient::connect_rsd(&mut adapter, &mut handshake)
             .await
             .map_err(|error| BridgeError::service("HID service unavailable", error))?;
+        let ax = ax::AxClient::connect(&mut adapter, &handshake).await;
 
         Ok(Self {
             screenshot,
@@ -294,6 +298,7 @@ impl ConnectedSession {
             keyboard,
             apps,
             display,
+            ax,
             _adapter: adapter,
             _handshake: handshake,
             screen_size: None,
@@ -401,10 +406,19 @@ impl ConnectedSession {
                 completion.finish(result);
             }
             Command::ScreenSize(completion) => completion.finish(self.size().await),
-            Command::AxSnapshot(completion) => completion.finish(Err(BridgeError::new(
-                PP_Error::Unsupported,
-                "accessibility snapshots are not implemented",
-            ))),
+            Command::AxSnapshot(completion) => {
+                let result = match &mut self.ax {
+                    Ok(ax) => ax
+                        .snapshot()
+                        .await
+                        .map_err(|error| BridgeError::new(PP_Error::Service, error)),
+                    Err(error) => Err(BridgeError::new(
+                        PP_Error::Service,
+                        format!("accessibility service unavailable: {error}"),
+                    )),
+                };
+                completion.finish(result);
+            }
             Command::Shutdown => {
                 let _ = self.display.stop_media_stream().await;
                 return false;
@@ -1110,7 +1124,11 @@ pub unsafe extern "C" fn pp_screen_size(
     );
 }
 
-/// Reserved accessibility snapshot API. Currently completes with `PP_Error::Unsupported`.
+/// Returns a JSON accessibility focus-order snapshot.
+///
+/// The envelope includes `elements`, `complete`, `geometryAvailable`, and a `rawSample` from the
+/// first focus event. Role, traits, and unit-coordinate frame fields are populated only when the
+/// daemon includes those values in its raw focus payload.
 ///
 /// # Safety
 ///

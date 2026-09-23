@@ -186,7 +186,11 @@ void pp_launch_app(struct PP_Session *session,
 void pp_screen_size(struct PP_Session *session, PP_SizeCallback callback, void *context);
 
 /**
- * Reserved accessibility snapshot API. Currently completes with `PP_Error::Unsupported`.
+ * Returns a JSON accessibility focus-order snapshot.
+ *
+ * The envelope includes `elements`, `complete`, `geometryAvailable`, and a `rawSample` from the
+ * first focus event. Role, traits, and unit-coordinate frame fields are populated only when the
+ * daemon includes those values in its raw focus payload.
  *
  * # Safety
  *
