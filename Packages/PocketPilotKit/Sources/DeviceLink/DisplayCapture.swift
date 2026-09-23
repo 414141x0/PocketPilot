@@ -1,5 +1,17 @@
-#if canImport(ScreenCaptureKit)
 public import AgentCore
+
+public enum CaptureError: Error, Sendable, Hashable {
+    /// Screen recording is unsupported or restricted on this device.
+    case unavailable
+    /// The user dismissed the picker or declined to share the display.
+    case declined
+    /// Capture is running but no frame has arrived yet.
+    case noFrame
+    /// The system or the user stopped the stream.
+    case stopped(String)
+}
+
+#if canImport(ScreenCaptureKit)
 import CoreMedia
 import ScreenCaptureKit
 import Synchronization
@@ -83,16 +95,7 @@ private final class FrameReceiver: NSObject, SCStreamOutput, SCStreamDelegate, S
     }
 }
 
-public enum CaptureError: Error, Sendable, Hashable {
-    /// Screen recording is unsupported or restricted on this device.
-    case unavailable
-    /// The user dismissed the picker or declined to share the display.
-    case declined
-    /// Capture is running but no frame has arrived yet.
-    case noFrame
-    /// The system or the user stopped the stream.
-    case stopped(String)
-
+extension CaptureError {
     init(_ error: any Error) {
         switch (error as NSError).code {
         case SCStreamError.Code.userDeclined.rawValue: self = .declined
@@ -161,4 +164,15 @@ private final class DisplayPicker: NSObject, SCContentSharingPickerObserver {
         continuation = nil
     }
 }
+#else
+
+/// ScreenCaptureKit is absent on this platform (for example, in Simulator), so capture is always unavailable.
+public final class DisplayCapture: Sendable {
+    @MainActor
+    public static func start() async throws(CaptureError) -> DisplayCapture { throw .unavailable }
+    public func screenshot() throws(CaptureError) -> Screenshot { throw .unavailable }
+    public func settled(quiet: Duration = .milliseconds(250), timeout: Duration = .seconds(3)) async throws {}
+    public func stop() async {}
+}
+
 #endif

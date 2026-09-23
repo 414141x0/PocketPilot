@@ -17,7 +17,9 @@ let package = Package(
     ],
     targets: [
         .target(name: "AgentCore", swiftSettings: settings),
-        .target(name: "DeviceLink", dependencies: ["AgentCore"], swiftSettings: settings),
+        .target(name: "DeviceLink", dependencies: ["AgentCore", "PilotBridge"], swiftSettings: settings),
+        // Built by Scripts/build-xcframework.sh.
+        .binaryTarget(name: "PilotBridge", path: "Frameworks/PilotBridge.xcframework"),
         .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"], swiftSettings: settings),
         .testTarget(name: "DeviceLinkTests", dependencies: ["DeviceLink"], swiftSettings: settings),
     ]
