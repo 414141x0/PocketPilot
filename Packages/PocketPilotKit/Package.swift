@@ -14,13 +14,33 @@ let package = Package(
     products: [
         .library(name: "AgentCore", targets: ["AgentCore"]),
         .library(name: "DeviceLink", targets: ["DeviceLink"]),
+        .library(name: "OpenAIPilot", targets: ["OpenAIPilot"]),
+        .library(name: "SystemPilot", targets: ["SystemPilot"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/MacPaw/OpenAI.git", from: "0.5.1"),
     ],
     targets: [
         .target(name: "AgentCore", swiftSettings: settings),
         .target(name: "DeviceLink", dependencies: ["AgentCore", "PilotBridge"], swiftSettings: settings),
         // Built by Scripts/build-xcframework.sh.
         .binaryTarget(name: "PilotBridge", path: "Frameworks/PilotBridge.xcframework"),
+        .target(
+            name: "OpenAIPilot",
+            dependencies: [
+                "AgentCore",
+                .product(name: "OpenAI", package: "OpenAI"),
+            ],
+            swiftSettings: settings
+        ),
+        .target(
+            name: "SystemPilot",
+            dependencies: ["AgentCore"],
+            swiftSettings: settings
+        ),
         .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"], swiftSettings: settings),
         .testTarget(name: "DeviceLinkTests", dependencies: ["DeviceLink"], swiftSettings: settings),
+        .testTarget(name: "OpenAIPilotTests", dependencies: ["OpenAIPilot"], swiftSettings: settings),
+        .testTarget(name: "SystemPilotTests", dependencies: ["SystemPilot"], swiftSettings: settings),
     ]
 )
