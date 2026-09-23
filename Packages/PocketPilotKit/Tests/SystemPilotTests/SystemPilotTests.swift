@@ -1,142 +1,79 @@
 import Testing
 import Foundation
-import CoreGraphics
 @testable import AgentCore
 @testable import SystemPilot
 
 @Suite struct SystemPilotTests {
-    @Test func mapsTapElementAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Tap on settings item",
-            kind: "tap",
-            elementID: 15
-        )
-
-        let decision = try await SystemPilot.mapDecision(payload)
-        #expect(decision.thought == "Tap on settings item")
+    @Test func mapsTapElementAction() {
+        let reply = Reply(thought: "Tap settings", action: .tap(element: 15))
+        let decision = SystemPilot.mapDecision(reply)
+        #expect(decision.thought == "Tap settings")
         #expect(decision.action == .tap(.element(15)))
     }
 
-    @Test func mapsTapGridCoordinates() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Tap top-right corner",
-            kind: "tap",
-            gridX: 950,
-            gridY: 50
-        )
-
-        let decision = try await SystemPilot.mapDecision(payload)
-        #expect(decision.thought == "Tap top-right corner")
-        #expect(decision.action == .tap(.point(Point(x: 0.95, y: 0.05))))
+    @Test func mapsTapGridCoordinates() {
+        let reply = Reply(thought: "Tap corner", action: .tapPoint(x: 950, y: 50))
+        let decision = SystemPilot.mapDecision(reply)
+        #expect(decision.action == .tap(.point(Point(grid: 950, 50))))
     }
 
-    @Test func mapsLongPressAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Hold item to drag",
-            kind: "longPress",
-            elementID: 7
-        )
-
-        let decision = try await SystemPilot.mapDecision(payload)
+    @Test func mapsLongPressAction() {
+        let reply = Reply(thought: "Hold item", action: .longPress(element: 7))
+        let decision = SystemPilot.mapDecision(reply)
         #expect(decision.action == .longPress(.element(7)))
     }
 
-    @Test func mapsScrollAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Scroll list down",
-            kind: "scroll",
-            elementID: 3,
-            scrollDirection: "down"
-        )
+    @Test func mapsScrollActionWithAndWithoutTarget() {
+        let replyWithTarget = Reply(thought: "Scroll list", action: .scroll(direction: .down, element: 3))
+        let decision1 = SystemPilot.mapDecision(replyWithTarget)
+        #expect(decision1.action == .scroll(.down, in: .element(3)))
 
-        let decision = try await SystemPilot.mapDecision(payload)
-        #expect(decision.action == .scroll(.down, in: .element(3)))
+        let replyNoTarget = Reply(thought: "Scroll page", action: .scroll(direction: .up, element: nil))
+        let decision2 = SystemPilot.mapDecision(replyNoTarget)
+        #expect(decision2.action == .scroll(.up, in: nil))
     }
 
-    @Test func mapsTypeTextAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Type query",
-            kind: "type",
-            text: "Hello World"
-        )
-
-        let decision = try await SystemPilot.mapDecision(payload)
+    @Test func mapsTypeTextAction() {
+        let reply = Reply(thought: "Enter text", action: .type(text: "Hello World"))
+        let decision = SystemPilot.mapDecision(reply)
         #expect(decision.action == .type("Hello World"))
     }
 
-    @Test func mapsPressButtonAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Lock the phone",
-            kind: "press",
-            button: "lock"
-        )
+    @Test func mapsPressButtonActions() {
+        let replyLock = Reply(thought: "Lock phone", action: .press(button: .lock))
+        #expect(SystemPilot.mapDecision(replyLock).action == .press(.lock))
 
-        let decision = try await SystemPilot.mapDecision(payload)
-        #expect(decision.action == .press(.lock))
+        let replyHome = Reply(thought: "Go home", action: .press(button: .home))
+        #expect(SystemPilot.mapDecision(replyHome).action == .press(.home))
+
+        let replyVolUp = Reply(thought: "Volume up", action: .press(button: .volumeUp))
+        #expect(SystemPilot.mapDecision(replyVolUp).action == .press(.volumeUp))
+
+        let replyVolDown = Reply(thought: "Volume down", action: .press(button: .volumeDown))
+        #expect(SystemPilot.mapDecision(replyVolDown).action == .press(.volumeDown))
     }
 
-    @Test func mapsOpenAppAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Launch Safari",
-            kind: "open",
-            bundleID: "com.apple.mobilesafari"
-        )
-
-        let decision = try await SystemPilot.mapDecision(payload)
+    @Test func mapsOpenAppAction() {
+        let reply = Reply(thought: "Open Safari", action: .open(bundleID: "com.apple.mobilesafari"))
+        let decision = SystemPilot.mapDecision(reply)
         #expect(decision.action == .open(bundleID: "com.apple.mobilesafari"))
     }
 
-    @Test func mapsWaitAction() async throws {
-        let payload = SystemDecisionPayload(
-            thought: "Wait for page reload",
-            kind: "wait",
-            waitSeconds: 2.5
-        )
-
-        let decision = try await SystemPilot.mapDecision(payload)
+    @Test func mapsWaitAction() {
+        let reply = Reply(thought: "Wait briefly", action: .wait(seconds: 2.5))
+        let decision = SystemPilot.mapDecision(reply)
         #expect(decision.action == .wait(seconds: 2.5))
     }
 
-    @Test func mapsDoneAndGiveUpActions() async throws {
-        let donePayload = SystemDecisionPayload(
-            thought: "Task completed successfully",
-            kind: "done",
-            summaryOrReason: "Message sent"
-        )
-        let doneDecision = try await SystemPilot.mapDecision(donePayload)
-        #expect(doneDecision.action == .done(summary: "Message sent"))
-        #expect(doneDecision.action.isTerminal == true)
+    @Test func mapsDoneAndGiveUpActions() {
+        let replyDone = Reply(thought: "Finished", action: .done(summary: "Success"))
+        let decisionDone = SystemPilot.mapDecision(replyDone)
+        #expect(decisionDone.action == .done(summary: "Success"))
+        #expect(decisionDone.action.isTerminal == true)
 
-        let giveUpPayload = SystemDecisionPayload(
-            thought: "Cannot proceed",
-            kind: "giveUp",
-            summaryOrReason: "Network blocked"
-        )
-        let giveUpDecision = try await SystemPilot.mapDecision(giveUpPayload)
-        #expect(giveUpDecision.action == .giveUp(reason: "Network blocked"))
-        #expect(giveUpDecision.action.isTerminal == true)
-    }
-
-    @Test func throwsOnMissingTapTarget() async {
-        let payload = SystemDecisionPayload(
-            thought: "Tap nothing",
-            kind: "tap"
-        )
-
-        await #expect(throws: SystemPilotError.self) {
-            try await SystemPilot.mapDecision(payload)
-        }
-    }
-
-    @Test func throwsOnInvalidScrollDirection() async {
-        let payload = SystemDecisionPayload(
-            thought: "Bad scroll",
-            kind: "scroll",
-            scrollDirection: "sideways"
-        )
-
-        await #expect(throws: SystemPilotError.self) {
-            try await SystemPilot.mapDecision(payload)
-        }
+        let replyGiveUp = Reply(thought: "Cannot finish", action: .giveUp(reason: "Blocked"))
+        let decisionGiveUp = SystemPilot.mapDecision(replyGiveUp)
+        #expect(decisionGiveUp.action == .giveUp(reason: "Blocked"))
+        #expect(decisionGiveUp.action.isTerminal == true)
     }
 }

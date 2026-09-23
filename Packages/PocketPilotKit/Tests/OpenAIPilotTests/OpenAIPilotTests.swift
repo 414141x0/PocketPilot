@@ -50,10 +50,10 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         return Screen(screenshot: screenshot, elements: [element])
     }
 
-    @Test func decodesTapElementAction() async throws {
-        let jsonResponse = """
+    private func makeResponseJSON(actionJSON: String) -> String {
+        """
         {
-            "id": "resp_123",
+            "id": "resp_test",
             "object": "response",
             "created_at": 1727100000,
             "model": "gpt-5.1",
@@ -62,7 +62,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
                     "type": "function_call",
                     "call_id": "call_1",
                     "name": "submit_decision",
-                    "arguments": "{\\"thought\\":\\"Found Submit button\\",\\"action\\":{\\"kind\\":\\"tap\\",\\"element_id\\":42}}"
+                    "arguments": "{\\"thought\\":\\"Test thought\\",\\"action\\":\(actionJSON.replacingOccurrences(of: "\"", with: "\\\""))}"
                 }
             ],
             "parallel_tool_calls": false,
@@ -70,109 +70,68 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             "metadata": {}
         }
         """
-
-        let session = makeStubbedSession(jsonResponse: jsonResponse)
-        let pilot = OpenAIPilot(apiKey: "sk-test", model: "gpt-5.1", session: session)
-        let step = Step(goal: "Tap submit", screen: makeDummyScreen())
-
-        let decision = try await pilot.decide(step)
-        #expect(decision.thought == "Found Submit button")
-        #expect(decision.action == .tap(.element(42)))
     }
 
-    @Test func decodesTapCoordinatesAction() async throws {
-        let jsonResponse = """
-        {
-            "id": "resp_124",
-            "object": "response",
-            "created_at": 1727100000,
-            "model": "gpt-5.1",
-            "output": [
-                {
-                    "type": "function_call",
-                    "call_id": "call_2",
-                    "name": "submit_decision",
-                    "arguments": "{\\"thought\\":\\"Tapping screen center\\",\\"action\\":{\\"kind\\":\\"tap\\",\\"x\\":500,\\"y\\":500}}"
-                }
-            ],
-            "parallel_tool_calls": false,
-            "tools": [],
-            "metadata": {}
+    @Test func verifiesStrictAnyOfSchemaShape() throws {
+        let tool = OpenAIPilot.makeDecisionTool()
+        #expect(tool.name == "submit_decision")
+        #expect(tool.strict == true)
+
+        let data = try JSONEncoder().encode(tool.parameters)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        let required = json["required"] as? [String] ?? []
+        #expect(required.contains("thought"))
+        #expect(required.contains("action"))
+        #expect(json["additionalProperties"] as? Bool == false)
+
+        let properties = json["properties"] as! [String: Any]
+        let actionProp = properties["action"] as! [String: Any]
+        let anyOf = actionProp["anyOf"] as! [[String: Any]]
+
+        #expect(anyOf.count == 10)
+        for sub in anyOf {
+            let subReq = sub["required"] as? [String] ?? []
+            #expect(subReq.contains("kind"))
+            #expect(sub["additionalProperties"] as? Bool == false)
+            let subProps = sub["properties"] as! [String: Any]
+            // In OpenAI strict mode, every property in properties must be listed in required
+            for key in subProps.keys {
+                #expect(subReq.contains(key))
+            }
         }
-        """
-
-        let session = makeStubbedSession(jsonResponse: jsonResponse)
-        let pilot = OpenAIPilot(apiKey: "sk-test", model: "gpt-5.1", session: session)
-        let step = Step(goal: "Tap center", screen: makeDummyScreen())
-
-        let decision = try await pilot.decide(step)
-        #expect(decision.thought == "Tapping screen center")
-        #expect(decision.action == .tap(.point(Point(x: 0.5, y: 0.5))))
     }
 
-    @Test func decodesScrollAndTypeActions() async throws {
-        let jsonResponse = """
-        {
-            "id": "resp_125",
-            "object": "response",
-            "created_at": 1727100000,
-            "model": "gpt-5.1",
-            "output": [
-                {
-                    "type": "function_call",
-                    "call_id": "call_3",
-                    "name": "submit_decision",
-                    "arguments": "{\\"thought\\":\\"Scroll down to view more\\",\\"action\\":{\\"kind\\":\\"scroll\\",\\"direction\\":\\"down\\"}}"
-                }
-            ],
-            "parallel_tool_calls": false,
-            "tools": [],
-            "metadata": {}
+    @Test func decodesAllActionVariantsExhaustively() async throws {
+        let testCases: [(json: String, expectedAction: Action)] = [
+            ("{\"kind\":\"tap\",\"element_id\":42}", .tap(.element(42))),
+            ("{\"kind\":\"tap_point\",\"x\":500,\"y\":250}", .tap(.point(Point(grid: 500, 250)))),
+            ("{\"kind\":\"long_press\",\"element_id\":12}", .longPress(.element(12))),
+            ("{\"kind\":\"scroll\",\"direction\":\"down\",\"element_id\":3}", .scroll(.down, in: .element(3))),
+            ("{\"kind\":\"scroll\",\"direction\":\"up\",\"element_id\":null}", .scroll(.up, in: nil)),
+            ("{\"kind\":\"type\",\"text\":\"hello\"}", .type("hello")),
+            ("{\"kind\":\"press\",\"button\":\"lock\"}", .press(.lock)),
+            ("{\"kind\":\"press\",\"button\":\"home\"}", .press(.home)),
+            ("{\"kind\":\"open\",\"bundle_id\":\"com.apple.Preferences\"}", .open(bundleID: "com.apple.Preferences")),
+            ("{\"kind\":\"wait\",\"seconds\":1.5}", .wait(seconds: 1.5)),
+            ("{\"kind\":\"done\",\"summary\":\"Finished\"}", .done(summary: "Finished")),
+            ("{\"kind\":\"give_up\",\"reason\":\"Stuck\"}", .giveUp(reason: "Stuck"))
+        ]
+
+        for (actionJSON, expectedAction) in testCases {
+            let session = makeStubbedSession(jsonResponse: makeResponseJSON(actionJSON: actionJSON))
+            let pilot = OpenAIPilot(apiKey: "sk-test", session: session)
+            let step = Step(goal: "Goal", screen: makeDummyScreen())
+            let decision = try await pilot.decide(step)
+            #expect(decision.thought == "Test thought")
+            #expect(decision.action == expectedAction)
         }
-        """
-
-        let session = makeStubbedSession(jsonResponse: jsonResponse)
-        let pilot = OpenAIPilot(apiKey: "sk-test", model: "gpt-5.1", session: session)
-        let step = Step(goal: "Scroll", screen: makeDummyScreen())
-
-        let decision = try await pilot.decide(step)
-        #expect(decision.action == .scroll(.down, in: nil))
-    }
-
-    @Test func decodesDoneAction() async throws {
-        let jsonResponse = """
-        {
-            "id": "resp_126",
-            "object": "response",
-            "created_at": 1727100000,
-            "model": "gpt-5.1",
-            "output": [
-                {
-                    "type": "function_call",
-                    "call_id": "call_4",
-                    "name": "submit_decision",
-                    "arguments": "{\\"thought\\":\\"Goal accomplished\\",\\"action\\":{\\"kind\\":\\"done\\",\\"summary\\":\\"Task finished\\"}}"
-                }
-            ],
-            "parallel_tool_calls": false,
-            "tools": [],
-            "metadata": {}
-        }
-        """
-
-        let session = makeStubbedSession(jsonResponse: jsonResponse)
-        let pilot = OpenAIPilot(apiKey: "sk-test", model: "gpt-5.1", session: session)
-        let step = Step(goal: "Finish", screen: makeDummyScreen())
-
-        let decision = try await pilot.decide(step)
-        #expect(decision.action == .done(summary: "Task finished"))
-        #expect(decision.action.isTerminal == true)
     }
 
     @Test func throwsWhenToolCallMissing() async {
         let jsonResponse = """
         {
-            "id": "resp_127",
+            "id": "resp_empty",
             "object": "response",
             "created_at": 1727100000,
             "model": "gpt-5.1",
@@ -184,10 +143,40 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         """
 
         let session = makeStubbedSession(jsonResponse: jsonResponse)
-        let pilot = OpenAIPilot(apiKey: "sk-test", model: "gpt-5.1", session: session)
+        let pilot = OpenAIPilot(apiKey: "sk-test", session: session)
         let step = Step(goal: "Finish", screen: makeDummyScreen())
 
         await #expect(throws: OpenAIPilotError.self) {
+            try await pilot.decide(step)
+        }
+    }
+
+    @Test func throwsWhenToolArgumentsInvalid() async {
+        let jsonResponse = """
+        {
+            "id": "resp_bad",
+            "object": "response",
+            "created_at": 1727100000,
+            "model": "gpt-5.1",
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": "call_bad",
+                    "name": "submit_decision",
+                    "arguments": "not-valid-json"
+                }
+            ],
+            "parallel_tool_calls": false,
+            "tools": [],
+            "metadata": {}
+        }
+        """
+
+        let session = makeStubbedSession(jsonResponse: jsonResponse)
+        let pilot = OpenAIPilot(apiKey: "sk-test", session: session)
+        let step = Step(goal: "Finish", screen: makeDummyScreen())
+
+        await #expect(throws: DecodingError.self) {
             try await pilot.decide(step)
         }
     }

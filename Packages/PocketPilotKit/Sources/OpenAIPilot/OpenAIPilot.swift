@@ -1,45 +1,34 @@
 public import AgentCore
 public import Foundation
-import CoreGraphics
 public import OpenAI
 
 /// A pilot that queries OpenAI's Responses API to choose device actions.
 public struct OpenAIPilot: Pilot {
-    public let apiKey: String
     public let model: String
     private let client: any OpenAIProtocol
 
     public init(apiKey: String, model: String = "gpt-5.1", session: URLSession = .shared) {
-        self.apiKey = apiKey
         self.model = model
         let configuration = OpenAI.Configuration(token: apiKey)
         self.client = OpenAI(configuration: configuration, session: session)
     }
 
-    /// Internal initializer for dependency injection and testing.
-    init(apiKey: String, model: String = "gpt-5.1", client: any OpenAIProtocol) {
-        self.apiKey = apiKey
+    init(model: String = "gpt-5.1", client: any OpenAIProtocol) {
         self.model = model
         self.client = client
     }
 
     public func decide(_ step: Step) async throws -> Decision {
         var contentItems: [InputContent] = []
-
         if let jpegData = await step.screen.screenshot.jpeg() {
-            let inputImage = InputImage(imageData: jpegData, detail: .high)
-            contentItems.append(.inputImage(inputImage))
+            contentItems.append(.inputImage(InputImage(imageData: jpegData, detail: .high)))
         }
-
-        let textContent = Components.Schemas.InputTextContent(_type: .inputText, text: step.brief())
-        contentItems.append(.inputText(textContent))
+        contentItems.append(.inputText(.init(_type: .inputText, text: step.brief())))
 
         let message = EasyInputMessage(role: .user, content: .inputItemContentList(contentItems))
-        let inputItem = InputItem.inputMessage(message)
-
         let decisionTool = Self.makeDecisionTool()
         let query = CreateModelResponseQuery(
-            input: .inputItemList([inputItem]),
+            input: .inputItemList([.inputMessage(message)]),
             model: model,
             instructions: Self.instructions,
             toolChoice: .ToolChoiceFunction(.init(_type: .function, name: decisionTool.name)),
@@ -47,144 +36,122 @@ public struct OpenAIPilot: Pilot {
         )
 
         let response = try await client.responses.createResponse(query: query)
-        return try await Self.parseDecision(from: response)
+        return try Self.parseDecision(from: response)
     }
 
-    @concurrent
-    private static func parseDecision(from response: ResponseObject) async throws -> Decision {
+    static func parseDecision(from response: ResponseObject) throws -> Decision {
         for item in response.output {
             if case .functionToolCall(let call) = item, call.name == "submit_decision" {
                 guard let data = call.arguments.data(using: .utf8) else {
                     throw OpenAIPilotError.invalidArguments(call.arguments)
                 }
-                let decoded = try JSONDecoder().decode(Payload.self, from: data)
-                return try decoded.toDecision()
+                let decoded = try JSONDecoder().decode(Reply.self, from: data)
+                return Decision(thought: decoded.thought, action: decoded.action.toAction())
             }
         }
         throw OpenAIPilotError.missingDecisionToolCall
     }
 
-    private static func makeDecisionTool() -> FunctionTool {
+    static func makeDecisionTool() -> FunctionTool {
+        let anyOf: [JSONSchema] = [
+            actionSchema("tap", ["element_id": .init(.type(.integer))]),
+            actionSchema("tap_point", ["x": .init(.type(.integer)), "y": .init(.type(.integer))]),
+            actionSchema("long_press", ["element_id": .init(.type(.integer))]),
+            actionSchema("scroll", [
+                "direction": .init(.type(.string), .enumValues(["up", "down", "left", "right"])),
+                "element_id": .init(.type(.types(["integer", "null"])))
+            ]),
+            actionSchema("type", ["text": .init(.type(.string))]),
+            actionSchema("press", ["button": .init(.type(.string), .enumValues(["home", "lock", "volumeUp", "volumeDown"]))]),
+            actionSchema("open", ["bundle_id": .init(.type(.string))]),
+            actionSchema("wait", ["seconds": .init(.type(.number))]),
+            actionSchema("done", ["summary": .init(.type(.string))]),
+            actionSchema("give_up", ["reason": .init(.type(.string))]),
+        ]
+
         let schema = JSONSchema(
             .type(.object),
             .properties([
-                "thought": JSONSchema(.type(.string), .description("Reasoning explaining why this action was chosen")),
-                "action": JSONSchema(
-                    .type(.object),
-                    .properties([
-                        "kind": JSONSchema(
-                            .type(.string),
-                            .enumValues(["tap", "longPress", "scroll", "type", "press", "open", "wait", "done", "giveUp"]),
-                            .description("The action kind to perform")
-                        ),
-                        "element_id": JSONSchema(.type(.integer), .description("Target accessibility element ID from outline")),
-                        "x": JSONSchema(.type(.integer), .description("X coordinate on 1000x1000 grid")),
-                        "y": JSONSchema(.type(.integer), .description("Y coordinate on 1000x1000 grid")),
-                        "direction": JSONSchema(
-                            .type(.string),
-                            .enumValues(["up", "down", "left", "right"]),
-                            .description("Scroll direction")
-                        ),
-                        "text": JSONSchema(.type(.string), .description("Text string to type")),
-                        "button": JSONSchema(
-                            .type(.string),
-                            .enumValues(["home", "lock", "volumeUp", "volumeDown"]),
-                            .description("Hardware button")
-                        ),
-                        "bundle_id": JSONSchema(.type(.string), .description("App bundle identifier to launch")),
-                        "seconds": JSONSchema(.type(.number), .description("Seconds to wait")),
-                        "summary": JSONSchema(.type(.string), .description("Success summary for done action")),
-                        "reason": JSONSchema(.type(.string), .description("Failure reason for giveUp action"))
-                    ]),
-                    .required(["kind"]),
-                    .additionalProperties(.boolean(false))
-                )
+                "thought": JSONSchema(.type(.string), .description("one short sentence")),
+                "action": JSONSchema(.anyOf(anyOf))
             ]),
             .required(["thought", "action"]),
             .additionalProperties(.boolean(false))
         )
-
-        return FunctionTool(
-            name: "submit_decision",
-            description: "Submit the decided agent action and rationale.",
-            parameters: schema,
-            strict: true
-        )
+        return FunctionTool(name: "submit_decision", description: "Submit agent decision.", parameters: schema, strict: true)
     }
 
-    private struct Payload: Decodable {
+    private static func actionSchema(_ kind: String, _ properties: [String: JSONSchema] = [:]) -> JSONSchema {
+        var props = properties
+        props["kind"] = .init(.const(kind))
+        return .init(.properties(props), .required(Array(props.keys)), .additionalProperties(.boolean(false)))
+    }
+
+    private struct Reply: Decodable {
         var thought: String
-        var action: ActionPayload
-
-        func toDecision() throws -> Decision {
-            Decision(thought: thought, action: try action.toAction())
-        }
+        var action: ActionChoice
     }
 
-    private struct ActionPayload: Decodable {
-        var kind: String
-        var element_id: Int?
-        var x: Int?
-        var y: Int?
-        var direction: String?
-        var text: String?
-        var button: String?
-        var bundle_id: String?
-        var seconds: Double?
-        var summary: String?
-        var reason: String?
+    enum ActionChoice: Decodable {
+        case tap(elementId: Int)
+        case tapPoint(x: Int, y: Int)
+        case longPress(elementId: Int)
+        case scroll(direction: Direction, elementId: Int?)
+        case type(text: String)
+        case press(button: HardwareButton)
+        case open(bundleId: String)
+        case wait(seconds: Double)
+        case done(summary: String)
+        case giveUp(reason: String)
 
-        func toAction() throws -> Action {
+        private enum DiscriminatorKeys: String, CodingKey { case kind }
+        private enum CodingKeys: String, CodingKey {
+            case kind, x, y, direction, text, button, seconds, summary, reason
+            case elementId = "element_id"
+            case bundleId = "bundle_id"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let kind = try decoder.container(keyedBy: DiscriminatorKeys.self).decode(String.self, forKey: .kind)
+            let c = try decoder.container(keyedBy: CodingKeys.self)
             switch kind {
-            case "tap":
-                if let element_id {
-                    return .tap(.element(element_id))
-                } else if let x, let y {
-                    return .tap(.point(Point(grid: x, y)))
-                }
-                throw OpenAIPilotError.missingTarget("tap requires element_id or (x, y)")
-
-            case "longPress":
-                if let element_id {
-                    return .longPress(.element(element_id))
-                } else if let x, let y {
-                    return .longPress(.point(Point(grid: x, y)))
-                }
-                throw OpenAIPilotError.missingTarget("longPress requires element_id or (x, y)")
-
+            case "tap": self = .tap(elementId: try c.decode(Int.self, forKey: .elementId))
+            case "tap_point": self = .tapPoint(x: try c.decode(Int.self, forKey: .x), y: try c.decode(Int.self, forKey: .y))
+            case "long_press": self = .longPress(elementId: try c.decode(Int.self, forKey: .elementId))
             case "scroll":
-                guard let rawDir = direction, let dir = Direction(rawValue: rawDir) else {
-                    throw OpenAIPilotError.invalidArgument("scroll requires direction up/down/left/right")
+                let rawDir = try c.decode(String.self, forKey: .direction)
+                guard let dir = Direction(rawValue: rawDir) else {
+                    throw DecodingError.dataCorruptedError(forKey: .direction, in: c, debugDescription: "Invalid direction: \(rawDir)")
                 }
-                let target = element_id.map { Target.element($0) }
-                return .scroll(dir, in: target)
-
-            case "type":
-                return .type(text ?? "")
-
+                self = .scroll(direction: dir, elementId: try c.decodeIfPresent(Int.self, forKey: .elementId))
+            case "type": self = .type(text: try c.decode(String.self, forKey: .text))
             case "press":
-                guard let rawBtn = button, let btn = HardwareButton(rawValue: rawBtn) else {
-                    throw OpenAIPilotError.invalidArgument("press requires valid hardware button")
+                let rawBtn = try c.decode(String.self, forKey: .button)
+                guard let btn = HardwareButton(rawValue: rawBtn) else {
+                    throw DecodingError.dataCorruptedError(forKey: .button, in: c, debugDescription: "Invalid button: \(rawBtn)")
                 }
-                return .press(btn)
-
-            case "open":
-                guard let bundle_id, !bundle_id.isEmpty else {
-                    throw OpenAIPilotError.invalidArgument("open requires bundle_id")
-                }
-                return .open(bundleID: bundle_id)
-
-            case "wait":
-                return .wait(seconds: seconds ?? 1.0)
-
-            case "done":
-                return .done(summary: summary ?? "")
-
-            case "giveUp":
-                return .giveUp(reason: reason ?? "")
-
+                self = .press(button: btn)
+            case "open": self = .open(bundleId: try c.decode(String.self, forKey: .bundleId))
+            case "wait": self = .wait(seconds: try c.decode(Double.self, forKey: .seconds))
+            case "done": self = .done(summary: try c.decode(String.self, forKey: .summary))
+            case "give_up": self = .giveUp(reason: try c.decode(String.self, forKey: .reason))
             default:
-                throw OpenAIPilotError.invalidArgument("Unknown action kind: \(kind)")
+                throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "Unknown action kind: \(kind)")
+            }
+        }
+
+        func toAction() -> Action {
+            switch self {
+            case .tap(let id): .tap(.element(id))
+            case .tapPoint(let x, let y): .tap(.point(Point(grid: x, y)))
+            case .longPress(let id): .longPress(.element(id))
+            case .scroll(let dir, let id): .scroll(dir, in: id.map { .element($0) })
+            case .type(let text): .type(text)
+            case .press(let btn): .press(btn)
+            case .open(let bundleId): .open(bundleID: bundleId)
+            case .wait(let seconds): .wait(seconds: seconds)
+            case .done(let summary): .done(summary: summary)
+            case .giveUp(let reason): .giveUp(reason: reason)
             }
         }
     }
@@ -193,19 +160,11 @@ public struct OpenAIPilot: Pilot {
 public enum OpenAIPilotError: LocalizedError, Sendable {
     case missingDecisionToolCall
     case invalidArguments(String)
-    case missingTarget(String)
-    case invalidArgument(String)
 
     public var errorDescription: String? {
         switch self {
-        case .missingDecisionToolCall:
-            "OpenAI response did not contain the expected submit_decision tool call"
-        case .invalidArguments(let args):
-            "Failed to decode decision tool arguments: \(args)"
-        case .missingTarget(let reason):
-            "Missing action target: \(reason)"
-        case .invalidArgument(let reason):
-            "Invalid action argument: \(reason)"
+        case .missingDecisionToolCall: "OpenAI response did not contain the expected submit_decision tool call"
+        case .invalidArguments(let args): "Failed to decode decision tool arguments: \(args)"
         }
     }
 }

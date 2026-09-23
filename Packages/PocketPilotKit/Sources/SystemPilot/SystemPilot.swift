@@ -1,6 +1,5 @@
 public import AgentCore
 public import Foundation
-import CoreGraphics
 public import FoundationModels
 
 /// A pilot backed by Apple's on-device FoundationModels SystemLanguageModel.
@@ -18,130 +17,103 @@ public struct SystemPilot: Pilot {
             throw SystemPilotError.modelUnavailable(model.availability)
         }
 
-        let prompt = Prompt {
-            step.brief(historyLimit: maxHistoryTurns)
-            Attachment(step.screen.screenshot.image).label("screenshot")
+        var historyLimit = maxHistoryTurns
+        var elementLimit = 60
+        let contextSize = model.contextSize
+
+        var prompt = makePrompt(step: step, historyLimit: historyLimit, elementLimit: elementLimit)
+        while try await model.tokenCount(for: prompt) > contextSize {
+            if elementLimit > 20 {
+                elementLimit -= 10
+            } else if historyLimit > 1 {
+                historyLimit -= 1
+            } else {
+                break
+            }
+            prompt = makePrompt(step: step, historyLimit: historyLimit, elementLimit: elementLimit)
         }
 
         let session = LanguageModelSession(model: model, instructions: Self.instructions)
-        let response = try await session.respond(to: prompt, generating: SystemDecisionPayload.self)
-        return try await Self.mapDecision(response.content)
+        let response = try await session.respond(to: prompt, generating: Reply.self)
+        return Self.mapDecision(response.content)
     }
 
-    @concurrent
-    static func mapDecision(_ payload: SystemDecisionPayload) async throws -> Decision {
-        let action: Action
-        switch payload.kind {
-        case "tap":
-            if let elementID = payload.elementID {
-                action = .tap(.element(elementID))
-            } else if let x = payload.gridX, let y = payload.gridY {
-                action = .tap(.point(Point(grid: x, y)))
-            } else {
-                throw SystemPilotError.missingTarget("tap requires elementID or (gridX, gridY)")
-            }
-
-        case "longPress":
-            if let elementID = payload.elementID {
-                action = .longPress(.element(elementID))
-            } else if let x = payload.gridX, let y = payload.gridY {
-                action = .longPress(.point(Point(grid: x, y)))
-            } else {
-                throw SystemPilotError.missingTarget("longPress requires elementID or (gridX, gridY)")
-            }
-
-        case "scroll":
-            guard let rawDir = payload.scrollDirection, let dir = Direction(rawValue: rawDir) else {
-                throw SystemPilotError.invalidAction("scroll requires valid direction (up, down, left, right)")
-            }
-            let target = payload.elementID.map { Target.element($0) }
-            action = .scroll(dir, in: target)
-
-        case "type":
-            action = .type(payload.text ?? "")
-
-        case "press":
-            guard let rawBtn = payload.button, let btn = HardwareButton(rawValue: rawBtn) else {
-                throw SystemPilotError.invalidAction("press requires valid hardware button")
-            }
-            action = .press(btn)
-
-        case "open":
-            guard let bundleID = payload.bundleID, !bundleID.isEmpty else {
-                throw SystemPilotError.invalidAction("open requires non-empty bundleID")
-            }
-            action = .open(bundleID: bundleID)
-
-        case "wait":
-            action = .wait(seconds: payload.waitSeconds ?? 1.0)
-
-        case "done":
-            action = .done(summary: payload.summaryOrReason ?? "")
-
-        case "giveUp":
-            action = .giveUp(reason: payload.summaryOrReason ?? "")
-
-        default:
-            throw SystemPilotError.invalidAction("Unknown action kind: \(payload.kind)")
+    private func makePrompt(step: Step, historyLimit: Int, elementLimit: Int) -> Prompt {
+        Prompt {
+            step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
+            Attachment(step.screen.screenshot.image).label("screenshot")
         }
+    }
 
-        return Decision(thought: payload.thought, action: action)
+    static func mapDecision(_ reply: Reply) -> Decision {
+        let action: Action = switch reply.action {
+        case .tap(let id): .tap(.element(id))
+        case .tapPoint(let x, let y): .tap(.point(Point(grid: x, y)))
+        case .longPress(let id): .longPress(.element(id))
+        case .scroll(let dir, let id): .scroll(dir.toDirection(), in: id.map { .element($0) })
+        case .type(let text): .type(text)
+        case .press(let btn): .press(btn.toButton())
+        case .open(let bundleID): .open(bundleID: bundleID)
+        case .wait(let seconds): .wait(seconds: seconds)
+        case .done(let summary): .done(summary: summary)
+        case .giveUp(let reason): .giveUp(reason: reason)
+        }
+        return Decision(thought: reply.thought, action: action)
     }
 }
 
-/// A guided Generable mirror of agent decision that lives inside SystemPilot.
-@Generable(description: "An agent action decision for an iOS device")
-struct SystemDecisionPayload: Sendable {
-    @Guide(description: "Reasoning and thought process explaining why this action was chosen")
-    var thought: String
+@Generable(description: "Agent decision")
+struct Reply: Sendable {
+    @Guide(description: "one short sentence") var thought: String
+    var action: Choice
+}
 
-    @Guide(
-        description: "Action type to perform",
-        .anyOf(["tap", "longPress", "scroll", "type", "press", "open", "wait", "done", "giveUp"])
-    )
-    var kind: String
+@Generable enum Heading: Sendable {
+    case up, down, left, right
 
-    @Guide(description: "Target accessibility element ID from outline (if targeting an element)")
-    var elementID: Int?
+    func toDirection() -> Direction {
+        switch self {
+        case .up: .up
+        case .down: .down
+        case .left: .left
+        case .right: .right
+        }
+    }
+}
 
-    @Guide(description: "X coordinate on 1000x1000 grid (0...1000)", .range(0...1000))
-    var gridX: Int?
+@Generable enum Key: Sendable {
+    case home, lock, volumeUp, volumeDown
 
-    @Guide(description: "Y coordinate on 1000x1000 grid (0...1000)", .range(0...1000))
-    var gridY: Int?
+    func toButton() -> HardwareButton {
+        switch self {
+        case .home: .home
+        case .lock: .lock
+        case .volumeUp: .volumeUp
+        case .volumeDown: .volumeDown
+        }
+    }
+}
 
-    @Guide(description: "Scroll direction", .anyOf(["up", "down", "left", "right"]))
-    var scrollDirection: String?
-
-    @Guide(description: "Text to type")
-    var text: String?
-
-    @Guide(description: "Hardware button", .anyOf(["home", "lock", "volumeUp", "volumeDown"]))
-    var button: String?
-
-    @Guide(description: "Bundle ID of app to launch")
-    var bundleID: String?
-
-    @Guide(description: "Seconds to wait (0.1 to 60.0)")
-    var waitSeconds: Double?
-
-    @Guide(description: "Completion summary for done action, or failure reason for giveUp")
-    var summaryOrReason: String?
+@Generable enum Choice: Sendable {
+    case tap(element: Int)
+    case tapPoint(x: Int, y: Int)
+    case longPress(element: Int)
+    case scroll(direction: Heading, element: Int?)
+    case type(text: String)
+    case press(button: Key)
+    case open(bundleID: String)
+    case wait(seconds: Double)
+    case done(summary: String)
+    case giveUp(reason: String)
 }
 
 public enum SystemPilotError: LocalizedError, Sendable {
     case modelUnavailable(SystemLanguageModel.Availability)
-    case missingTarget(String)
-    case invalidAction(String)
 
     public var errorDescription: String? {
         switch self {
         case .modelUnavailable(let availability):
             "System language model is unavailable: \(availability)"
-        case .missingTarget(let reason):
-            "Missing action target: \(reason)"
-        case .invalidAction(let reason):
-            "Invalid action configuration: \(reason)"
         }
     }
 }
