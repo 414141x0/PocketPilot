@@ -62,7 +62,7 @@ private struct DeviceSection: View {
         } header: {
             Text("Device")
         } footer: {
-            Text("Keep LocalDevVPN connected while PocketPilot runs. It routes traffic back to this iPhone's RSD port so the app can reach on-device developer services without a tethered Mac.")
+            Text("Keep LocalDevVPN connected while PocketPilot runs. It loops traffic back to this iPhone, so the app can reach its developer services without a Mac.")
         }
     }
 }

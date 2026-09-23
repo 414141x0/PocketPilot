@@ -101,7 +101,7 @@ private struct ConnectionChip: View {
         }
     }
 
-    private var statusText: String {
+    private var statusText: LocalizedStringResource {
         switch state {
         case .disconnected: "Ready"
         case .connecting: "Connecting…"
