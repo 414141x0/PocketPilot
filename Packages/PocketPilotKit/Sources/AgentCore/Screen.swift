@@ -1,5 +1,3 @@
-import Foundation
-
 /// What the agent perceives at one moment: pixels plus, when available, accessibility semantics.
 public struct Screen: Sendable {
     public var screenshot: Screenshot
@@ -12,20 +10,6 @@ public struct Screen: Sendable {
 
     public subscript(id: Element.ID) -> Element? {
         elements.first { $0.id == id }
-    }
-}
-
-public struct Screenshot: Sendable {
-    /// PNG-encoded image data.
-    public var png: Data
-    /// Size in pixels, used by models that reason in image coordinates.
-    public var width: Int
-    public var height: Int
-
-    public init(png: Data, width: Int, height: Int) {
-        self.png = png
-        self.width = width
-        self.height = height
     }
 }
 

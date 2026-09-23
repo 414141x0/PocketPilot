@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 @testable import AgentCore
 
@@ -60,7 +62,7 @@ import Testing
 
     @Test func outlineShowsValueTraitsAndTruncation() {
         let field = Element(id: 4, role: .textField, label: "Message", value: "hi", frame: .fullScreen, traits: [.focused, .disabled])
-        let screen = Screen(screenshot: Screenshot(png: Data(), width: 10, height: 20), elements: [field, field])
+        let screen = Screen(screenshot: Screenshot.blank(width: 10, height: 20), elements: [field, field])
 
         #expect(screen.outline(limit: 1) == """
             screen=10x20 elements=1/2
@@ -78,7 +80,7 @@ private actor FakeDevice: Device {
 
     func observe() throws(DeviceError) -> Screen {
         Screen(
-            screenshot: Screenshot(png: Data(), width: 1, height: 1),
+            screenshot: Screenshot.blank(width: 1, height: 1),
             elements: [Element(id: 1, role: .button, label: "OK", frame: Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))]
         )
     }
@@ -101,5 +103,24 @@ private actor ScriptedPilot: Pilot {
         lastHistory = step.history
         let action = script.isEmpty ? fallback! : script.removeFirst()
         return Decision(action: action)
+    }
+}
+
+extension Screenshot {
+    static func blank(width: Int, height: Int) -> Screenshot {
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        )!
+        return Screenshot(image: context.makeImage()!)
+    }
+}
+
+@Suite struct ScreenshotTests {
+    @Test func jpegDownscalesToLongestEdge() async throws {
+        let data = try #require(await Screenshot.blank(width: 400, height: 800).jpeg(maxDimension: 200))
+        let image = try #require(CGImageSourceCreateWithData(data as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+
+        #expect((image.width, image.height) == (100, 200))
     }
 }
