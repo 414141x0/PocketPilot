@@ -1,7 +1,7 @@
 import Foundation
 
-/// What the agent can perceive at one moment: pixels plus, when available, semantics.
-public struct Observation: Sendable {
+/// What the agent perceives at one moment: pixels plus, when available, accessibility semantics.
+public struct Screen: Sendable {
     public var screenshot: Screenshot
     public var elements: [Element]
 
@@ -31,7 +31,7 @@ public struct Screenshot: Sendable {
 
 /// One accessibility element, flattened out of the device's accessibility hierarchy.
 public struct Element: Sendable, Hashable, Identifiable, Codable {
-    /// Stable only within a single ``Observation``.
+    /// Stable only within a single ``Screen``.
     public var id: Int
     public var role: Role
     public var label: String

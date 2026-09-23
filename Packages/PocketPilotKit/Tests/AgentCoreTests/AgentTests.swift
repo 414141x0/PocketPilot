@@ -65,8 +65,8 @@ private actor FakeDevice: Device {
 
     init(failure: DeviceError? = nil) { self.failure = failure }
 
-    func observe() throws(DeviceError) -> Observation {
-        Observation(
+    func observe() throws(DeviceError) -> Screen {
+        Screen(
             screenshot: Screenshot(png: Data(), width: 1, height: 1),
             elements: [Element(id: 1, role: .button, label: "OK", frame: Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))]
         )

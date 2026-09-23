@@ -1,7 +1,7 @@
 /// A model that looks at the screen and decides what to do next.
 ///
 /// Pilots are stateless policies: every call receives the goal, the current
-/// observation, and the full history, so conformers stay simple value types
+/// screen, and the full history, so conformers stay simple value types
 /// and the loop owns all state.
 public protocol Pilot: Sendable {
     func decide(_ step: Step) async throws -> Decision
@@ -10,12 +10,12 @@ public protocol Pilot: Sendable {
 /// Everything a ``Pilot`` needs to choose the next action.
 public struct Step: Sendable {
     public var goal: String
-    public var observation: Observation
+    public var screen: Screen
     public var history: [Turn]
 
-    public init(goal: String, observation: Observation, history: [Turn] = []) {
+    public init(goal: String, screen: Screen, history: [Turn] = []) {
         self.goal = goal
-        self.observation = observation
+        self.screen = screen
         self.history = history
     }
 

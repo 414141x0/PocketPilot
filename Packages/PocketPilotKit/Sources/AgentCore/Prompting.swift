@@ -2,7 +2,7 @@
 ///
 /// Coordinates are shown on a 1000×1000 grid; integers read more reliably to
 /// language models than unit fractions. Use ``Point/init(grid:)`` to convert back.
-extension Observation {
+extension Screen {
     /// One line per element: `[id] role "label" = "value" @(x,y)`.
     public var outline: String {
         elements.map(\.outline).joined(separator: "\n")

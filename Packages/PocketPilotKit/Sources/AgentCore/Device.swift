@@ -1,6 +1,6 @@
 /// The phone, as the agent sees and touches it.
 public protocol Device: Sendable {
-    func observe() async throws(DeviceError) -> Observation
+    func observe() async throws(DeviceError) -> Screen
     func perform(_ gesture: Gesture) async throws(DeviceError)
 }
 

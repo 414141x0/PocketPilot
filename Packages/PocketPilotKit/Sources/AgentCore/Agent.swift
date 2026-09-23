@@ -25,7 +25,7 @@ public struct Agent: Sendable {
     }
 
     public enum Event: Sendable {
-        case observed(Observation, step: Int)
+        case observed(Screen, step: Int)
         case decided(Decision)
         case failed(Action, reason: String)
     }
@@ -41,8 +41,8 @@ public struct Agent: Sendable {
         while history.count < maxSteps {
             try Task.checkCancellation()
 
-            let step = Step(goal: goal, observation: try await device.observe(), history: history)
-            onEvent(.observed(step.observation, step: step.number))
+            let step = Step(goal: goal, screen: try await device.observe(), history: history)
+            onEvent(.observed(step.screen, step: step.number))
 
             let decision = try await pilot.decide(step)
             onEvent(.decided(decision))
@@ -55,7 +55,7 @@ public struct Agent: Sendable {
             }
 
             var turn = Turn(decision: decision)
-            if let failure = try await perform(decision.action, on: step.observation) {
+            if let failure = try await perform(decision.action, on: step.screen) {
                 turn.failure = failure
                 onEvent(.failed(decision.action, reason: failure))
             }
@@ -67,9 +67,9 @@ public struct Agent: Sendable {
 
     /// Performs `action`, returning a description of any failure the pilot can recover from.
     /// Failures that make further progress impossible are thrown.
-    private func perform(_ action: Action, on observation: Observation) async throws -> String? {
+    private func perform(_ action: Action, on screen: Screen) async throws -> String? {
         do {
-            guard let gesture = try action.gesture(in: observation) else { return nil }
+            guard let gesture = try action.gesture(on: screen) else { return nil }
             try await device.perform(gesture)
             return nil
         } catch let error as ResolutionError {

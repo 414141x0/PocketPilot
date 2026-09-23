@@ -1,11 +1,11 @@
 extension Action {
-    /// The concrete gesture for this action on the observed screen, or `nil`
+    /// The concrete gesture for this action on `screen`, or `nil`
     /// when the action needs no input (waiting, finishing).
-    public func gesture(in observation: Observation) throws(ResolutionError) -> Gesture? {
+    public func gesture(on screen: Screen) throws(ResolutionError) -> Gesture? {
         switch self {
-        case .tap(let target): .tap(try observation.point(for: target))
-        case .longPress(let target): .longPress(try observation.point(for: target))
-        case .scroll(let direction, let target): .swipe(direction, in: try observation.frame(for: target))
+        case .tap(let target): .tap(try screen.point(for: target))
+        case .longPress(let target): .longPress(try screen.point(for: target))
+        case .scroll(let direction, let target): .swipe(direction, in: try screen.frame(for: target))
         case .type(let text): .type(text)
         case .press(let button): .press(button)
         case .open(let bundleID): .launch(bundleID: bundleID)
@@ -24,7 +24,7 @@ public enum ResolutionError: Error, Sendable, Hashable, CustomStringConvertible 
     }
 }
 
-extension Observation {
+extension Screen {
     func point(for target: Target) throws(ResolutionError) -> Point {
         switch target {
         case .point(let point): point
