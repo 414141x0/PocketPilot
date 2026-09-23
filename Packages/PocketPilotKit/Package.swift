@@ -13,9 +13,12 @@ let package = Package(
     platforms: [.iOS(.v27), .macOS(.v27)],
     products: [
         .library(name: "AgentCore", targets: ["AgentCore"]),
+        .library(name: "DeviceLink", targets: ["DeviceLink"]),
     ],
     targets: [
         .target(name: "AgentCore", swiftSettings: settings),
+        .target(name: "DeviceLink", dependencies: ["AgentCore"], swiftSettings: settings),
         .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"], swiftSettings: settings),
+        .testTarget(name: "DeviceLinkTests", dependencies: ["DeviceLink"], swiftSettings: settings),
     ]
 )
