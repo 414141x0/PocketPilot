@@ -124,3 +124,24 @@ extension Screenshot {
         #expect((image.width, image.height) == (100, 200))
     }
 }
+
+@Suite struct PromptingTests {
+    @Test(arguments: [
+        (Action.tap(.element(3)), "tap [3]"),
+        (.tap(.point(Point(grid: 500, 420))), "tap (500,420)"),
+        (.scroll(.down, in: .element(5)), "scroll down in [5]"),
+        (.type("hi"), #"type "hi""#),
+        (.wait(seconds: 1.5), "wait 1.5s"),
+    ])
+    func actionsReadCompactly(_ action: Action, _ expected: String) {
+        #expect(action.description == expected)
+    }
+
+    @Test func historyKeepsTurnNumbersWhenTruncated() {
+        let turns = (1...4).map { Turn(decision: Decision(action: .wait(seconds: Double($0)))) }
+        let step = Step(goal: "g", screen: Screen(screenshot: .blank(width: 1, height: 1)), history: turns)
+
+        #expect(step.historyOutline(limit: 2) == "3. wait 3s\n4. wait 4s")
+        #expect(Step(goal: "g", screen: step.screen).historyOutline() == "(none yet)")
+    }
+}

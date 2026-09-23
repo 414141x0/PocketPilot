@@ -36,15 +36,81 @@ extension Element.Traits {
     }
 }
 
+extension Pilot {
+    /// The system instructions every pilot gives its model.
+    public static var instructions: String {
+        """
+        You operate an iPhone on the user's behalf. Each turn you see the goal, your previous \
+        actions, a screenshot, and a list of on-screen accessibility elements. Reply with exactly one action.
+
+        Elements look like `[12] button "Send" @(850,910)`: an id, role, label, optional value, \
+        center on a 1000×1000 grid (x right, y down), and flags such as disabled or focused.
+
+        - Target elements by id whenever one matches; use grid points only for things the list lacks.
+        - To enter text, tap the field first, then type. Typing does not submit.
+        - Scroll direction names where the content moves: "down" reveals what is below.
+        - Open apps by bundle identifier when you know it; otherwise go home and use the Home Screen.
+        - If an action failed, read the reason and try something different rather than repeating it.
+        - Finish with done and a one-sentence summary once the goal is met, or giveUp with the reason \
+        when it cannot be met. Never ask the user questions.
+        - Keep your thought to one short sentence.
+        """
+    }
+}
+
 extension Step {
-    /// Prior turns, oldest first, one line each.
-    public var historyOutline: String {
-        history.enumerated().map { index, turn in
+    /// The per-turn briefing: goal, recent history, and the element outline.
+    ///
+    /// Smaller limits suit models with small context windows.
+    public func brief(historyLimit: Int = 20, elementLimit: Int = 200) -> String {
+        """
+        Goal: \(goal)
+
+        Previous actions:
+        \(historyOutline(limit: historyLimit))
+
+        Screen:
+        \(screen.outline(limit: elementLimit))
+        """
+    }
+
+    /// The most recent `limit` turns, oldest first, one line each.
+    public func historyOutline(limit: Int = .max) -> String {
+        let recent = history.suffix(limit)
+        guard !recent.isEmpty else { return "(none yet)" }
+        return zip(recent.indices, recent).map { index, turn in
             var line = "\(index + 1). \(turn.decision.action)"
             if let failure = turn.failure { line += " — failed: \(failure)" }
             return line
         }
         .joined(separator: "\n")
+    }
+}
+
+extension Action: CustomStringConvertible {
+    /// A compact rendering such as `tap [3]` or `scroll down`, read by models and people alike.
+    public var description: String {
+        switch self {
+        case .tap(let target): "tap \(target)"
+        case .longPress(let target): "long-press \(target)"
+        case .scroll(let direction, nil): "scroll \(direction)"
+        case .scroll(let direction, let target?): "scroll \(direction) in \(target)"
+        case .type(let text): "type \"\(text.truncated(to: 80))\""
+        case .press(let button): "press \(button)"
+        case .open(let bundleID): "open \(bundleID)"
+        case .wait(let seconds): "wait \(seconds == seconds.rounded() ? String(Int(seconds)) : String(seconds))s"
+        case .done(let summary): "done: \(summary)"
+        case .giveUp(let reason): "give up: \(reason)"
+        }
+    }
+}
+
+extension Target: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .element(let id): "[\(id)]"
+        case .point(let point): point.grid
+        }
     }
 }
 
