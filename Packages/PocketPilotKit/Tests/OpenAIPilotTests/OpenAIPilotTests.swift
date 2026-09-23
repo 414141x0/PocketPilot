@@ -102,30 +102,29 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 
-    @Test func decodesAllActionVariantsExhaustively() async throws {
-        let testCases: [(json: String, expectedAction: Action)] = [
-            ("{\"kind\":\"tap\",\"element_id\":42}", .tap(.element(42))),
-            ("{\"kind\":\"tap_point\",\"x\":500,\"y\":250}", .tap(.point(Point(grid: 500, 250)))),
-            ("{\"kind\":\"long_press\",\"element_id\":12}", .longPress(.element(12))),
-            ("{\"kind\":\"scroll\",\"direction\":\"down\",\"element_id\":3}", .scroll(.down, in: .element(3))),
-            ("{\"kind\":\"scroll\",\"direction\":\"up\",\"element_id\":null}", .scroll(.up, in: nil)),
-            ("{\"kind\":\"type\",\"text\":\"hello\"}", .type("hello")),
-            ("{\"kind\":\"press\",\"button\":\"lock\"}", .press(.lock)),
-            ("{\"kind\":\"press\",\"button\":\"home\"}", .press(.home)),
-            ("{\"kind\":\"open\",\"bundle_id\":\"com.apple.Preferences\"}", .open(bundleID: "com.apple.Preferences")),
-            ("{\"kind\":\"wait\",\"seconds\":1.5}", .wait(seconds: 1.5)),
-            ("{\"kind\":\"done\",\"summary\":\"Finished\"}", .done(summary: "Finished")),
-            ("{\"kind\":\"give_up\",\"reason\":\"Stuck\"}", .giveUp(reason: "Stuck"))
-        ]
+    static let decodeCases: [(String, Action)] = [
+        ("{\"kind\":\"tap\",\"element_id\":42}", .tap(.element(42))),
+        ("{\"kind\":\"tap_point\",\"x\":500,\"y\":250}", .tap(.point(Point(grid: 500, 250)))),
+        ("{\"kind\":\"long_press\",\"element_id\":12}", .longPress(.element(12))),
+        ("{\"kind\":\"scroll\",\"direction\":\"down\",\"element_id\":3}", .scroll(.down, in: .element(3))),
+        ("{\"kind\":\"scroll\",\"direction\":\"up\",\"element_id\":null}", .scroll(.up, in: nil)),
+        ("{\"kind\":\"type\",\"text\":\"hello\"}", .type("hello")),
+        ("{\"kind\":\"press\",\"button\":\"lock\"}", .press(.lock)),
+        ("{\"kind\":\"press\",\"button\":\"home\"}", .press(.home)),
+        ("{\"kind\":\"open\",\"bundle_id\":\"com.apple.Preferences\"}", .open(bundleID: "com.apple.Preferences")),
+        ("{\"kind\":\"wait\",\"seconds\":1.5}", .wait(seconds: 1.5)),
+        ("{\"kind\":\"done\",\"summary\":\"Finished\"}", .done(summary: "Finished")),
+        ("{\"kind\":\"give_up\",\"reason\":\"Stuck\"}", .giveUp(reason: "Stuck"))
+    ]
 
-        for (actionJSON, expectedAction) in testCases {
-            let session = makeStubbedSession(jsonResponse: makeResponseJSON(actionJSON: actionJSON))
-            let pilot = OpenAIPilot(apiKey: "sk-test", session: session)
-            let step = Step(goal: "Goal", screen: makeDummyScreen())
-            let decision = try await pilot.decide(step)
-            #expect(decision.thought == "Test thought")
-            #expect(decision.action == expectedAction)
-        }
+    @Test(arguments: decodeCases)
+    func decodesAllActionVariantsExhaustively(_ actionJSON: String, _ expectedAction: Action) async throws {
+        let session = makeStubbedSession(jsonResponse: makeResponseJSON(actionJSON: actionJSON))
+        let pilot = OpenAIPilot(apiKey: "sk-test", session: session)
+        let step = Step(goal: "Goal", screen: makeDummyScreen())
+        let decision = try await pilot.decide(step)
+        #expect(decision.thought == "Test thought")
+        #expect(decision.action == expectedAction)
     }
 
     @Test func throwsWhenToolCallMissing() async {
