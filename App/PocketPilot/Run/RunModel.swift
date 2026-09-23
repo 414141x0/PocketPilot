@@ -1,4 +1,6 @@
 import AgentCore
+import DeviceLink
+import Foundation
 import Observation
 
 /// Owns one agent run at a time and publishes its progress to the UI.
@@ -6,9 +8,21 @@ import Observation
 final class RunModel {
     enum Phase: Equatable {
         case idle
+        case connecting
         case running(step: Int)
         case finished(Agent.Outcome)
         case failed(String)
+
+        /// What to tell the user once a run has ended.
+        var conclusion: String? {
+            switch self {
+            case .finished(.completed(let summary)): summary
+            case .finished(.abandoned(let reason)): reason
+            case .finished(.outOfSteps): String(localized: "Stopped after reaching the step limit.")
+            case .failed(let message): message
+            case .idle, .connecting, .running: nil
+            }
+        }
     }
 
     struct Entry: Identifiable, Equatable {
@@ -21,20 +35,26 @@ final class RunModel {
     private(set) var phase = Phase.idle
     private(set) var entries: [Entry] = []
     private var task: Task<Void, Never>?
+    private let connection = Connection()
 
     var isRunning: Bool { task != nil }
 
-    func start(_ goal: String, with agent: Agent) {
+    /// Connects on first use, then drives the chosen pilot toward `goal`.
+    func start(_ goal: String, pairing: PairingFile, pilot: any Pilot) {
         guard !isRunning else { return }
         entries = []
-        phase = .running(step: 0)
+        phase = .connecting
         task = Task {
             defer { task = nil }
             do {
-                let outcome = try await agent.run(goal) { record($0) }
+                let phone = try await connection.phone(pairing: pairing)
+                let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
                 phase = .finished(outcome)
             } catch is CancellationError {
                 phase = .idle
+            } catch let error as DeviceError where !error.isRecoverable {
+                connection.reset()
+                phase = .failed(error.description)
             } catch {
                 phase = .failed(String(describing: error))
             }

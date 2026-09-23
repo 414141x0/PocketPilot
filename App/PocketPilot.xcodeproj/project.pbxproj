@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000101 /* AgentCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000201 /* AgentCore */; };
 		A10000000000000000000102 /* DeviceLink in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000202 /* DeviceLink */; };
+		A10000000000000000000103 /* OpenAIPilot in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000203 /* OpenAIPilot */; };
+		A10000000000000000000104 /* SystemPilot in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000204 /* SystemPilot */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +28,8 @@
 			files = (
 				A10000000000000000000101 /* AgentCore in Frameworks */,
 				A10000000000000000000102 /* DeviceLink in Frameworks */,
+				A10000000000000000000103 /* OpenAIPilot in Frameworks */,
+				A10000000000000000000104 /* SystemPilot in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,6 +74,8 @@
 			packageProductDependencies = (
 				A10000000000000000000201 /* AgentCore */,
 				A10000000000000000000202 /* DeviceLink */,
+				A10000000000000000000203 /* OpenAIPilot */,
+				A10000000000000000000204 /* SystemPilot */,
 			);
 			productName = PocketPilot;
 			productReference = A10000000000000000000301 /* PocketPilot.app */;
@@ -270,6 +276,14 @@
 		A10000000000000000000202 /* DeviceLink */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DeviceLink;
+		};
+		A10000000000000000000203 /* OpenAIPilot */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenAIPilot;
+		};
+		A10000000000000000000204 /* SystemPilot */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SystemPilot;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

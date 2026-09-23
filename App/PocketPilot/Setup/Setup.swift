@@ -2,6 +2,8 @@ import AgentCore
 import DeviceLink
 import Foundation
 import Observation
+import OpenAIPilot
+import SystemPilot
 
 /// Everything the user configures once: the device credential and which model flies.
 @Observable
@@ -32,6 +34,14 @@ final class Setup {
 
     var isReady: Bool {
         pairing != nil && (brain == .onDevice || !openAIKey.isEmpty)
+    }
+
+    /// The pilot for the chosen brain.
+    var pilot: any Pilot {
+        switch brain {
+        case .onDevice: SystemPilot()
+        case .openAI: OpenAIPilot(apiKey: openAIKey)
+        }
     }
 
     /// Validates and stores a pairing file picked by the user.

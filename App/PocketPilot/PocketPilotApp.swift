@@ -6,7 +6,7 @@ struct PocketPilotApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RunView(agent: nil, setup: setup)
+            RunView(setup: setup)
         }
     }
 }

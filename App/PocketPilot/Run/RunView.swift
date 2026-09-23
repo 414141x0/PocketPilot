@@ -2,7 +2,6 @@ import AgentCore
 import SwiftUI
 
 struct RunView: View {
-    let agent: Agent?
     let setup: Setup
     @State private var model = RunModel()
     @State private var goal = ""
@@ -14,6 +13,10 @@ struct RunView: View {
                 ForEach(model.entries) { entry in
                     EntryRow(thought: entry.thought, action: entry.action, failure: entry.failure)
                 }
+                if let conclusion = model.phase.conclusion {
+                    Text(conclusion)
+                        .font(.headline)
+                }
             }
             .overlay {
                 if model.entries.isEmpty {
@@ -21,8 +24,8 @@ struct RunView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                GoalField(goal: $goal, isRunning: model.isRunning, isEnabled: agent != nil) {
-                    if let agent { model.start(goal, with: agent) }
+                GoalField(goal: $goal, isRunning: model.isRunning, isEnabled: setup.isReady) {
+                    if let pairing = setup.pairing { model.start(goal, pairing: pairing, pilot: setup.pilot) }
                 } stop: {
                     model.stop()
                 }
@@ -110,6 +113,7 @@ private struct PhaseLabel: View {
     var body: some View {
         switch phase {
         case .idle: EmptyView()
+        case .connecting: Label("Connecting", systemImage: "cable.connector")
         case .running(let step): Text("Step \(step)")
         case .finished(.completed): Label("Done", systemImage: "checkmark.circle")
         case .finished(.abandoned): Label("Gave up", systemImage: "xmark.circle")
