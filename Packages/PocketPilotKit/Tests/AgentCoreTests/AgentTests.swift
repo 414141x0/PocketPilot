@@ -41,6 +41,22 @@ import Testing
         #expect(outcome == .outOfSteps)
     }
 
+    @Test func flagsActionsThatChangeNothing() async throws {
+        let pilot = ScriptedPilot(.tap(.element(1)), .giveUp(reason: "stuck"))
+        _ = try await Agent(device: FakeDevice(), pilot: pilot, settle: .zero).run("Tap OK")
+
+        #expect(await pilot.lastHistory.first?.failure == "The screen did not change.")
+    }
+
+    @Test func skipsThirdIdenticalAction() async throws {
+        let device = FakeDevice(changesEachStep: true)
+        let pilot = ScriptedPilot(.type("a"), .type("a"), .type("a"), .giveUp(reason: "stuck"))
+        _ = try await Agent(device: device, pilot: pilot, settle: .zero).run("Type")
+
+        #expect(await device.gestures == [.type("a"), .type("a")])
+        #expect(await pilot.lastHistory.last?.failure?.hasPrefix("Skipped") == true)
+    }
+
     @Test(arguments: Direction.allCases)
     func scrollMovesFingerAgainstDirection(_ direction: Direction) throws {
         guard case .swipe(let start, let end, _) = Gesture.swipe(direction, in: .fullScreen) else {
@@ -60,6 +76,12 @@ import Testing
         #expect(element.outline == #"[3] button "Send" @(850,910)"#)
     }
 
+    @Test func outlineOmitsElementsWithoutMeaning() {
+        let blank = Element(id: 9, role: .other, label: "", frame: .fullScreen)
+        let screen = Screen(screenshot: .blank(width: 1, height: 1), elements: [blank])
+        #expect(screen.outline() == "screen=1x1 elements=0/0")
+    }
+
     @Test func outlineShowsValueTraitsAndTruncation() {
         let field = Element(id: 4, role: .textField, label: "Message", value: "hi", frame: .fullScreen, traits: [.focused, .disabled])
         let screen = Screen(screenshot: Screenshot.blank(width: 10, height: 20), elements: [field, field])
@@ -75,13 +97,19 @@ import Testing
 private actor FakeDevice: Device {
     private(set) var gestures: [Gesture] = []
     private let failure: DeviceError?
+    private let changesEachStep: Bool
+    private var observations = 0
 
-    init(failure: DeviceError? = nil) { self.failure = failure }
+    init(failure: DeviceError? = nil, changesEachStep: Bool = false) {
+        self.failure = failure
+        self.changesEachStep = changesEachStep
+    }
 
     func observe() throws(DeviceError) -> Screen {
-        Screen(
+        observations += 1
+        return Screen(
             screenshot: Screenshot.blank(width: 1, height: 1),
-            elements: [Element(id: 1, role: .button, label: "OK", frame: Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))]
+            elements: [Element(id: 1, role: .button, label: changesEachStep ? "OK \(observations)" : "OK", frame: Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))]
         )
     }
 
@@ -142,6 +170,9 @@ extension Screenshot {
         let step = Step(goal: "g", screen: Screen(screenshot: .blank(width: 1, height: 1)), history: turns)
 
         #expect(step.historyOutline(limit: 2) == "3. wait 3s\n4. wait 4s")
+
+        let thoughtful = Step(goal: "g", screen: step.screen, history: [Turn(decision: Decision(thought: "Next: open Settings", action: .press(.home)))])
+        #expect(thoughtful.historyOutline() == "1. press home — Next: open Settings")
         #expect(Step(goal: "g", screen: step.screen).historyOutline() == "(none yet)")
     }
 }

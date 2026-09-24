@@ -41,11 +41,21 @@ public struct Agent: Sendable {
 
     public func run(_ goal: String, onEvent: (Event) -> Void = { _ in }) async throws -> Outcome {
         var history: [Turn] = []
+        var previous: Screen?
         while history.count < maxSteps {
             try Task.checkCancellation()
 
-            let step = Step(goal: goal, screen: try await device.observe(), history: history)
-            onEvent(.observed(step.screen, step: step.number))
+            let screen = try await device.observe()
+            if let previous, let last = history.indices.last, history[last].failure == nil,
+               history[last].decision.action.expectsChange, screen.looksUnchanged(from: previous) {
+                let reason = "The screen did not change."
+                history[last].failure = reason
+                onEvent(.failed(history[last].decision.action, reason: reason))
+            }
+            previous = screen
+
+            let step = Step(goal: goal, screen: screen, history: history)
+            onEvent(.observed(screen, step: step.number))
 
             let decision = try await pilot.decide(step)
             onEvent(.decided(decision))
@@ -57,9 +67,11 @@ public struct Agent: Sendable {
             default: break
             }
 
-            var turn = Turn(decision: decision)
-            if let failure = try await perform(decision.action, on: step.screen) {
-                turn.failure = failure
+            var turn = Turn(decision: decision, failure: history.repeatedFailure(of: decision.action))
+            if turn.failure == nil {
+                turn.failure = try await perform(decision.action, on: step.screen)
+            }
+            if let failure = turn.failure {
                 onEvent(.failed(decision.action, reason: failure))
             }
             history.append(turn)
@@ -80,6 +92,31 @@ public struct Agent: Sendable {
         } catch let error as DeviceError where error.isRecoverable {
             return error.description
         }
+    }
+}
+
+extension Action {
+    /// Whether performing this action should visibly change the screen.
+    var expectsChange: Bool {
+        switch self {
+        case .wait, .done, .giveUp: false
+        default: true
+        }
+    }
+}
+
+extension Screen {
+    /// Whether nothing the pilot can see has changed since `earlier`. Screens without elements never compare equal.
+    func looksUnchanged(from earlier: Screen) -> Bool {
+        !elements.isEmpty && elements == earlier.elements
+    }
+}
+
+extension [Turn] {
+    /// Why `action` should be skipped rather than tried a third time in a row.
+    func repeatedFailure(of action: Action) -> String? {
+        guard count >= 2, suffix(2).allSatisfy({ $0.decision.action == action }) else { return nil }
+        return "Skipped: this was already tried twice in a row. Choose something different, or give up."
     }
 }
 

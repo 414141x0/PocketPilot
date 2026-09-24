@@ -3,21 +3,27 @@
 /// Coordinates are shown on a 1000×1000 grid; integers read more reliably to
 /// language models than unit fractions. Use ``Point/init(grid:_:)`` to convert back.
 extension Screen {
-    /// A header line followed by one line per element, capped at `limit` elements:
+    /// A header line followed by one line per meaningful element, capped at `limit` elements:
     ///
     ///     screen=1290x2796 elements=2/2
     ///     [3] button "Send" @(850,910)
     ///     [4] textField "Message" = "hi" @(400,910) focused
     public func outline(limit: Int = 200) -> String {
-        let shown = elements.prefix(limit)
-        var lines = ["screen=\(screenshot.width)x\(screenshot.height) elements=\(shown.count)/\(elements.count)"]
+        let meaningful = elements.filter(\.isMeaningful)
+        let shown = meaningful.prefix(limit)
+        var lines = ["screen=\(screenshot.width)x\(screenshot.height) elements=\(shown.count)/\(meaningful.count)"]
         lines += shown.map(\.outline)
-        if elements.count > limit { lines.append("…+\(elements.count - limit) more") }
+        if meaningful.count > limit { lines.append("…+\(meaningful.count - limit) more") }
         return lines.joined(separator: "\n")
     }
 }
 
 extension Element {
+    /// Elements with no label, value, or state tell a model nothing and only cost tokens.
+    var isMeaningful: Bool {
+        !label.isEmpty || !(value ?? "").isEmpty || !traits.isEmpty
+    }
+
     /// `[id] role "label" = "value" @(x,y) flags`, with the value and flags only when present.
     public var outline: String {
         var line = "[\(id)] \(role.rawValue) \"\(label.truncated(to: 80))\""
@@ -53,7 +59,9 @@ extension Pilot {
         - If an action failed, read the reason and try something different rather than repeating it.
         - Finish with done and a one-sentence summary once the goal is met, or giveUp with the reason \
         when it cannot be met. Never ask the user questions.
-        - Keep your thought to one short sentence.
+        - Write your thought as three short parts: "Did: <what the last action achieved> Expect: <what \
+        should change> Next: <this action and its target>". Each part at most 15 words.
+        - "The screen did not change" means your last action had no effect; choose a different target.
         """
     }
 }
@@ -80,6 +88,7 @@ extension Step {
         guard !recent.isEmpty else { return "(none yet)" }
         return zip(recent.indices, recent).map { index, turn in
             var line = "\(index + 1). \(turn.decision.action)"
+            if !turn.decision.thought.isEmpty { line += " — \(turn.decision.thought.truncated(to: 120))" }
             if let failure = turn.failure { line += " — failed: \(failure)" }
             return line
         }
