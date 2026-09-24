@@ -84,7 +84,7 @@ public struct OpenAIPilot: Pilot {
 
     private static func actionSchema(_ kind: String, _ properties: [String: JSONSchema] = [:]) -> JSONSchema {
         var props = properties
-        props["kind"] = .init(.const(kind))
+        props["kind"] = .init(.type(.string), .enumValues([kind]))
         return .init(.type(.object), .properties(props), .required(props.keys.sorted()), .additionalProperties(.boolean(false)))
     }
 

@@ -17,6 +17,9 @@ public struct Agent: Sendable {
     /// Time given to the UI to finish animating before the next observation.
     public var settle: Duration
 
+    /// How many times the same screen may recur before the pilot is told it is looping.
+    static let loopLimit = 3
+
     /// The longest pause a pilot may request, so a model can't stall a run.
     static let longestWait = 30.0
 
@@ -42,6 +45,7 @@ public struct Agent: Sendable {
     public func run(_ goal: String, onEvent: (Event) -> Void = { _ in }) async throws -> Outcome {
         var history: [Turn] = []
         var previous: Screen?
+        var visits: [[Element]: Int] = [:]
         let apps = (try? await device.installedApps()) ?? []
         while history.count < maxSteps {
             try Task.checkCancellation()
@@ -54,6 +58,14 @@ public struct Agent: Sendable {
                 onEvent(.failed(history[last].decision.action, reason: reason))
             }
             previous = screen
+            if !screen.elements.isEmpty {
+                visits[screen.elements, default: 0] += 1
+                if visits[screen.elements] == Self.loopLimit, let last = history.indices.last, history[last].failure == nil {
+                    let reason = "You are going in circles: this exact screen has appeared \(Self.loopLimit) times. Try a different approach, or give up."
+                    history[last].failure = reason
+                    onEvent(.failed(history[last].decision.action, reason: reason))
+                }
+            }
 
             let step = Step(goal: goal, screen: screen, history: history)
             onEvent(.observed(screen, step: step.number))

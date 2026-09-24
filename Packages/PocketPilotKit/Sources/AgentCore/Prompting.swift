@@ -68,7 +68,8 @@ extension Pilot {
         submit, tab for the next field, escape to dismiss, delete to erase one character.
         - If iOS asks whether to allow pasting, tap Allow Paste.
         - Scroll direction names where the content moves: "down" reveals what is below.
-        - Open apps by their name, as shown on the Home Screen: open "Settings".
+        - To start or switch to any app, use open with its name, e.g. open "Settings". Never look for \
+        app icons on the Home Screen or in the App Library.
         - If an action failed, read the reason and try something different rather than repeating it.
         - Finish with done and a one-sentence summary once the goal is met, or giveUp with the reason \
         when it cannot be met. Never ask the user questions.

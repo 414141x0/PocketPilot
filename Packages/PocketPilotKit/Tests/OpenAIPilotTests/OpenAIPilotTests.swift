@@ -56,6 +56,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             "id": "resp_test",
             "object": "response",
             "created_at": 1727100000,
+            "tool_choice": "auto",
             "model": "gpt-5.1",
             "output": [
                 {
@@ -134,6 +135,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             "id": "resp_empty",
             "object": "response",
             "created_at": 1727100000,
+            "tool_choice": "auto",
             "model": "gpt-5.1",
             "output": [],
             "parallel_tool_calls": false,
@@ -157,6 +159,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             "id": "resp_bad",
             "object": "response",
             "created_at": 1727100000,
+            "tool_choice": "auto",
             "model": "gpt-5.1",
             "output": [
                 {

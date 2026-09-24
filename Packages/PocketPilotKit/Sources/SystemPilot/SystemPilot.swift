@@ -1,7 +1,6 @@
 public import AgentCore
 public import Foundation
 public import FoundationModels
-import CoreGraphics
 
 /// A pilot backed by Apple's on-device FoundationModels SystemLanguageModel.
 public struct SystemPilot: Pilot {
@@ -21,14 +20,13 @@ public struct SystemPilot: Pilot {
         }
 
         let fixedCost = try await overheadCache.overhead(for: model)
-        let budget = max(0, model.contextSize - fixedCost)
+        let budget = max(0, model.contextSize - fixedCost - Self.imageAllowance)
 
+        // Budget the text alone: counting tokens for a prompt with an image attachment fails
+        // on current iOS 27 seeds, while responding to the same prompt succeeds.
         var historyLimit = maxHistoryTurns
         var elementLimit = 60
-
-        let image = await step.screen.markedScreenshot().image
-        var prompt = makePrompt(step: step, image: image, historyLimit: historyLimit, elementLimit: elementLimit)
-        while try await model.tokenCount(for: prompt) > budget {
+        while try await model.tokenCount(for: Prompt { step.brief(historyLimit: historyLimit, elementLimit: elementLimit) }) > budget {
             if elementLimit > 20 {
                 elementLimit -= 10
             } else if historyLimit > 1 {
@@ -36,20 +34,20 @@ public struct SystemPilot: Pilot {
             } else {
                 break
             }
-            prompt = makePrompt(step: step, image: image, historyLimit: historyLimit, elementLimit: elementLimit)
         }
 
+        let image = await step.screen.markedScreenshot().image
+        let prompt = Prompt {
+            step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
+            Attachment(image).label("screenshot")
+        }
         let session = LanguageModelSession(model: model, instructions: Self.instructions)
         let response = try await session.respond(to: prompt, generating: Reply.self)
         return Self.mapDecision(response.content)
     }
 
-    private func makePrompt(step: Step, image: CGImage, historyLimit: Int, elementLimit: Int) -> Prompt {
-        Prompt {
-            step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
-            Attachment(image).label("screenshot")
-        }
-    }
+    /// Tokens reserved for the screenshot, which the model cannot count ahead of time.
+    static let imageAllowance = 1_500
 
     static func mapDecision(_ reply: Reply) -> Decision {
         let action: Action = switch reply.action {

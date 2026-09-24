@@ -57,6 +57,14 @@ import Testing
         #expect(await pilot.lastHistory.last?.failure?.hasPrefix("Skipped") == true)
     }
 
+    @Test func flagsCircling() async throws {
+        let pilot = ScriptedPilot(.scroll(.down), .scroll(.up), .scroll(.down), .scroll(.up), .giveUp(reason: "lost"))
+        _ = try await Agent(device: AlternatingDevice(), pilot: pilot, settle: .zero).run("Find Settings")
+
+        let failures = await pilot.lastHistory.compactMap(\.failure)
+        #expect(failures.contains { $0.hasPrefix("You are going in circles") })
+    }
+
     @Test(arguments: Direction.allCases)
     func scrollMovesFingerAgainstDirection(_ direction: Direction) throws {
         guard case .swipe(let start, let end, _) = Gesture.swipe(direction, in: .fullScreen) else {
@@ -254,4 +262,18 @@ private extension Screenshot {
     @Test func passesThroughWithoutAList() throws {
         #expect(try [InstalledApp]().bundleID(for: "com.example.app") == "com.example.app")
     }
+}
+
+/// Flips between two screens, the pattern of a pilot scrolling back and forth.
+private actor AlternatingDevice: Device {
+    private var flip = false
+
+    func observe() throws(DeviceError) -> Screen {
+        flip.toggle()
+        let label = flip ? "Page A" : "Page B"
+        return Screen(screenshot: .blank(width: 1, height: 1),
+                      elements: [Element(id: 1, role: .text, label: label, frame: .fullScreen)])
+    }
+
+    func perform(_ gesture: Gesture) throws(DeviceError) {}
 }
