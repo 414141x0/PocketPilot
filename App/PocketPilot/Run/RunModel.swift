@@ -42,7 +42,7 @@ final class RunModel {
     private(set) var latestScreenshot: CGImage?
     private var task: Task<Void, Never>?
     private let connection = Connection()
-    private let runActivity = RunActivity()
+    private let runActivity = LiveActivityController()
     private var currentStep = 0
     private var lastThought = ""
     private var lastAction = ""

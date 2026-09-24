@@ -6,7 +6,7 @@ import RunActivity
 /// Stateless by design: ActivityKit's Activity is non-Sendable with nonisolated
 /// async methods, so the value is looked up fresh per call and never stored
 /// across an isolation boundary.
-struct RunActivity: Sendable {
+struct LiveActivityController: Sendable {
     init() {
         // A previous launch may have died mid-run; never leave its banner behind.
         Task {
@@ -33,7 +33,7 @@ struct RunActivity: Sendable {
 
     nonisolated func end(conclusion: String) async {
         guard let activity = Activity<RunAttributes>.activities.first else { return }
-        let lastStep = activity.contentState.step
+        let lastStep = activity.content.state.step
         await activity.end(
             ActivityContent(
                 state: RunAttributes.ContentState(step: lastStep, action: "", thought: conclusion), staleDate: nil
