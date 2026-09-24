@@ -6,6 +6,7 @@ extension Action {
         case .tap(let target): .tap(try screen.point(for: target))
         case .longPress(let target): .longPress(try screen.point(for: target))
         case .scroll(let direction, let target): .swipe(direction, in: try screen.frame(for: target))
+        case .drag(let from, let to): .swipe(from: try screen.point(for: from), to: try screen.point(for: to))
         case .type(let text): .type(text)
         case .press(let button): .press(button)
         case .key(let key): .key(key)

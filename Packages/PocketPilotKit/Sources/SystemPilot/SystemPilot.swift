@@ -55,6 +55,8 @@ public struct SystemPilot: Pilot {
         case .tapPoint(let x, let y): .tap(.point(Point(grid: x, y)))
         case .longPress(let id): .longPress(.element(id))
         case .scroll(let dir, let id): .scroll(dir.toDirection(), in: id.map { .element($0) })
+        case .drag(let fromX, let fromY, let toX, let toY):
+            .drag(from: .point(Point(grid: fromX, fromY)), to: .point(Point(grid: toX, toY)))
         case .type(let text): .type(text)
         case .press(let btn): .press(btn.toButton())
         case .key(let name): .key(name.key)
@@ -117,6 +119,7 @@ struct Reply: Sendable {
     case tapPoint(x: Int, y: Int)
     case longPress(element: Int)
     case scroll(direction: Heading, element: Int?)
+    case drag(fromX: Int, fromY: Int, toX: Int, toY: Int)
     case type(text: String)
     case press(button: Key)
     case key(name: KeyName)

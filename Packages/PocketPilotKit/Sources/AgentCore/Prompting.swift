@@ -68,6 +68,7 @@ extension Pilot {
         submit, tab for the next field, escape to dismiss, delete to erase one character.
         - If iOS asks whether to allow pasting, tap Allow Paste.
         - Scroll direction names where the content moves: "down" reveals what is below.
+        - Drag from one point to another for sliders, maps, carousels, or pull-to-refresh.
         - To start or switch to any app, use open with its name, e.g. open "Settings". Never look for \
         app icons on the Home Screen or in the App Library.
         - If an action failed, read the reason and try something different rather than repeating it.
@@ -75,6 +76,7 @@ extension Pilot {
         when it cannot be met. Never ask the user questions.
         - Write your thought as three short parts: "Did: <what the last action achieved> Expect: <what \
         should change> Next: <this action and its target>". Each part at most 15 words.
+        - End your thought with "Keep: <facts>" to remember short facts for later steps; they return as Remembered.
         - "The screen did not change" means your last action had no effect; choose a different target.
         """
     }
@@ -85,8 +87,10 @@ extension Step {
     ///
     /// Smaller limits suit models with small context windows.
     public func brief(historyLimit: Int = 20, elementLimit: Int = 200) -> String {
-        """
-        Goal: \(goal)
+        var head = "Goal: \(goal)"
+        if let remembered { head += "\n\nRemembered: \(remembered)" }
+        return """
+        \(head)
 
         Previous actions:
         \(historyOutline(limit: historyLimit))
@@ -118,6 +122,7 @@ extension Action: CustomStringConvertible {
         case .longPress(let target): "long-press \(target)"
         case .scroll(let direction, nil): "scroll \(direction)"
         case .scroll(let direction, let target?): "scroll \(direction) in \(target)"
+        case .drag(let from, let to): "drag \(from)->\(to)"
         case .type(let text): "type \"\(text.truncated(to: 80))\""
         case .press(let button): "press \(button)"
         case .key(let key): "key \(key)"

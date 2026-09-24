@@ -46,6 +46,7 @@ public struct Agent: Sendable {
         var history: [Turn] = []
         var previous: Screen?
         var visits: [[Element]: Int] = [:]
+        var remembered: String?
         let apps = (try? await device.installedApps()) ?? []
         while history.count < maxSteps {
             try Task.checkCancellation()
@@ -67,10 +68,11 @@ public struct Agent: Sendable {
                 }
             }
 
-            let step = Step(goal: goal, screen: screen, history: history)
+            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered)
             onEvent(.observed(screen, step: step.number))
 
             let decision = try await pilot.decide(step)
+            if let keep = decision.keepFacts { remembered = keep }
             onEvent(.decided(decision))
 
             switch decision.action {
