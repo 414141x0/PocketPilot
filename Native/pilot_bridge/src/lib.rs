@@ -1,6 +1,7 @@
 mod ax;
 
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::ptr;
 use std::sync::Arc;
@@ -29,6 +30,8 @@ const KEY_V: u64 = 0x19;
 const CLIPBOARD_REPLACED_NOTE: &str =
     "The device clipboard was replaced; iOS may ask to allow pasting.";
 const REMOTE_PAIRING_PORT: u16 = 49_152;
+const REMOTE_PAIRING_TCP_TIMEOUT: Duration = Duration::from_secs(5);
+const REMOTE_PAIRING_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const VIDEO_SENDER_PORT: u16 = 50_001;
 
 /// Error categories returned by PilotBridge. The message carries operation-specific detail.
@@ -113,6 +116,16 @@ impl BridgeError {
     fn service(context: &str, error: impl std::fmt::Debug) -> Self {
         Self::new(PP_Error::Service, format!("{context}: {error:?}"))
     }
+}
+
+async fn timeout_connection_stage<T>(
+    deadline: tokio::time::Instant,
+    stage: &'static str,
+    operation: impl Future<Output = T>,
+) -> Result<T, BridgeError> {
+    tokio::time::timeout_at(deadline, operation)
+        .await
+        .map_err(|_| BridgeError::new(PP_Error::Connection, format!("{stage} timed out")))
 }
 
 #[derive(Clone, Copy)]
@@ -292,31 +305,60 @@ impl ConnectedSession {
         })?;
 
         let pairing_address = SocketAddr::new(address, REMOTE_PAIRING_PORT);
-        let pairing_stream = tokio::net::TcpStream::connect(pairing_address)
-            .await
-            .map_err(|error| BridgeError::connection("RemotePairing connection failed", error))?;
+        let pairing_stream = timeout_connection_stage(
+            tokio::time::Instant::now() + REMOTE_PAIRING_TCP_TIMEOUT,
+            "RemotePairing connection",
+            tokio::net::TcpStream::connect(pairing_address),
+        )
+        .await?
+        .map_err(|error| BridgeError::connection("RemotePairing connection failed", error))?;
         let mut pairing =
             RemotePairingClient::new(RpPairingSocket::new(pairing_stream), "PocketPilot");
-        pairing
-            .attempt_pair_verify()
-            .await
-            .map_err(|error| BridgeError::connection("RemotePairing handshake failed", error))?;
-        pairing
-            .validate_pairing(&mut pairing_file)
-            .await
-            .map_err(|error| BridgeError::connection("RemotePairing verification failed", error))?;
+        let handshake_deadline = tokio::time::Instant::now() + REMOTE_PAIRING_HANDSHAKE_TIMEOUT;
+        timeout_connection_stage(
+            handshake_deadline,
+            "RemotePairing pair-verify",
+            pairing.attempt_pair_verify(),
+        )
+        .await?
+        .map_err(|error| BridgeError::connection("RemotePairing handshake failed", error))?;
+        timeout_connection_stage(
+            handshake_deadline,
+            "RemotePairing verification",
+            pairing.validate_pairing(&mut pairing_file),
+        )
+        .await?
+        .map_err(|error| BridgeError::connection("RemotePairing verification failed", error))?;
 
-        let tunnel_port = pairing.create_tcp_listener().await.map_err(|error| {
+        let tunnel_port = timeout_connection_stage(
+            handshake_deadline,
+            "RemotePairing tunnel listener creation",
+            pairing.create_tcp_listener(),
+        )
+        .await?
+        .map_err(|error| {
             BridgeError::connection("RemotePairing tunnel listener creation failed", error)
         })?;
-        let tunnel_stream = tokio::net::TcpStream::connect(SocketAddr::new(address, tunnel_port))
-            .await
-            .map_err(|error| {
-                BridgeError::connection("RemotePairing tunnel connection failed", error)
-            })?;
-        let tunnel = connect_tls_psk_tunnel_native(tunnel_stream, pairing.encryption_key())
-            .await
-            .map_err(|error| BridgeError::connection("RemotePairing TLS tunnel failed", error))?;
+        let tunnel_connect_deadline = std::cmp::min(
+            handshake_deadline,
+            tokio::time::Instant::now() + REMOTE_PAIRING_TCP_TIMEOUT,
+        );
+        let tunnel_stream = timeout_connection_stage(
+            tunnel_connect_deadline,
+            "RemotePairing tunnel connection",
+            tokio::net::TcpStream::connect(SocketAddr::new(address, tunnel_port)),
+        )
+        .await?
+        .map_err(|error| {
+            BridgeError::connection("RemotePairing tunnel connection failed", error)
+        })?;
+        let tunnel = timeout_connection_stage(
+            handshake_deadline,
+            "RemotePairing TLS tunnel",
+            connect_tls_psk_tunnel_native(tunnel_stream, pairing.encryption_key()),
+        )
+        .await?
+        .map_err(|error| BridgeError::connection("RemotePairing TLS tunnel failed", error))?;
 
         let client_ip = tunnel
             .info
@@ -341,13 +383,20 @@ impl ConnectedSession {
         );
         adapter.set_mss(mtu.saturating_sub(60));
         let mut adapter = adapter.to_async_handle();
-        let stream = adapter
-            .connect(rsd_port)
-            .await
-            .map_err(|error| BridgeError::connection("RSD connection failed", error))?;
-        let mut handshake = RsdHandshake::new(stream)
-            .await
-            .map_err(|error| BridgeError::connection("RSD handshake failed", error))?;
+        let stream = timeout_connection_stage(
+            handshake_deadline,
+            "RSD connection",
+            adapter.connect(rsd_port),
+        )
+        .await?
+        .map_err(|error| BridgeError::connection("RSD connection failed", error))?;
+        let mut handshake = timeout_connection_stage(
+            handshake_deadline,
+            "RSD handshake",
+            RsdHandshake::new(stream),
+        )
+        .await?
+        .map_err(|error| BridgeError::connection("RSD handshake failed", error))?;
 
         let screenshot = ScreenCaptureServiceClient::connect_rsd(&mut adapter, &mut handshake)
             .await
@@ -1520,6 +1569,27 @@ mod tests {
 
         assert_eq!(capture.error, Some(PP_Error::Ok));
         assert_eq!(capture.message.as_deref(), Some(CLIPBOARD_REPLACED_NOTE));
+    }
+
+    #[test]
+    fn connection_stage_timeout_has_connection_code_and_stage() {
+        assert_eq!(REMOTE_PAIRING_TCP_TIMEOUT, Duration::from_secs(5));
+        assert_eq!(REMOTE_PAIRING_HANDSHAKE_TIMEOUT, Duration::from_secs(15));
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        let error = runtime
+            .block_on(timeout_connection_stage(
+                tokio::time::Instant::now() + Duration::from_millis(1),
+                "RemotePairing connection",
+                std::future::pending::<()>(),
+            ))
+            .unwrap_err();
+
+        assert_eq!(error.code, PP_Error::Connection);
+        assert_eq!(error.message, "RemotePairing connection timed out");
     }
 
     #[test]
