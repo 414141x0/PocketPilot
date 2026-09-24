@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PocketPilot connects to this iPhone's own developer services through LocalDevVPN.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>screen-capture</string>

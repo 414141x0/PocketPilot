@@ -1,6 +1,9 @@
 import AgentCore
 import Foundation
+import OSLog
 import PilotBridge
+
+let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "DeviceLink")
 
 /// A CoreDevice session with this iPhone, reached through LocalDevVPN's loopback tunnel.
 ///
@@ -121,11 +124,12 @@ extension DeviceError {
     /// The Swift error for a bridge result, or `nil` for success.
     init?(_ error: PP_Error, _ message: UnsafePointer<CChar>?) {
         let detail = message.map(String.init(cString:)) ?? "Unknown bridge failure."
-        switch error {
-        case PP_Error_Ok: return nil
-        case PP_Error_Connection: self = .tunnelUnavailable
-        case PP_Error_SessionClosed: self = .disconnected
-        default: self = .service(detail)
+        guard error != PP_Error_Ok else { return nil }
+        log.error("Bridge error \(error.rawValue): \(detail, privacy: .public)")
+        self = switch error {
+        case PP_Error_Connection: .connectionFailed(detail)
+        case PP_Error_SessionClosed: .disconnected
+        default: .service(detail)
         }
     }
 }

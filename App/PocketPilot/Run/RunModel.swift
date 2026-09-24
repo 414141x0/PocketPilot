@@ -3,6 +3,7 @@ import CoreGraphics
 import DeviceLink
 import Foundation
 import Observation
+import OSLog
 
 /// Owns one agent run at a time and publishes its progress to the UI.
 @Observable
@@ -33,6 +34,8 @@ final class RunModel {
         var failure: String?
     }
 
+    private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "Run")
+
     private(set) var phase = Phase.idle
     private(set) var entries: [Entry] = []
     private(set) var latestScreenshot: CGImage?
@@ -57,9 +60,11 @@ final class RunModel {
             } catch where Task.isCancelled {
                 phase = .idle
             } catch let error as DeviceError where !error.isRecoverable {
+                Self.log.error("Run failed: \(error.description, privacy: .public)")
                 connection.reset()
                 phase = .failed(error.description)
             } catch {
+                Self.log.error("Run failed: \(String(describing: error), privacy: .public)")
                 phase = .failed(String(describing: error))
             }
         }
@@ -71,6 +76,7 @@ final class RunModel {
     }
 
     private func record(_ event: Agent.Event) {
+        Self.log.info("\(String(describing: event), privacy: .public)")
         switch event {
         case .observed(let screen, let step):
             phase = .running(step: step)

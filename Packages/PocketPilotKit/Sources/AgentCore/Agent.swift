@@ -126,13 +126,14 @@ extension DeviceError: CustomStringConvertible {
     public var isRecoverable: Bool {
         switch self {
         case .timedOut, .service: true
-        case .tunnelUnavailable, .pairingRejected, .developerImageMissing, .disconnected: false
+        case .tunnelUnavailable, .connectionFailed, .pairingRejected, .developerImageMissing, .disconnected: false
         }
     }
 
     public var description: String {
         switch self {
         case .tunnelUnavailable: "LocalDevVPN is not connected."
+        case .connectionFailed(let detail): "Couldn't connect to this iPhone: \(detail)"
         case .pairingRejected: "The pairing file was rejected by the device."
         case .developerImageMissing: "The Developer Disk Image is not mounted."
         case .disconnected: "The connection to the device closed."

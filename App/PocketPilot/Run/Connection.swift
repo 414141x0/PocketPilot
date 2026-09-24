@@ -1,5 +1,6 @@
 import AgentCore
 import DeviceLink
+import Foundation
 import Observation
 
 /// One link to this iPhone, shared by every run so the screen-sharing picker appears once per launch.
@@ -31,6 +32,16 @@ final class Connection {
         }
     }
 
+    /// Debug builds launched with POCKETPILOT_NO_CAPTURE skip the screen-sharing picker,
+    /// so a run can start without anyone at the phone.
+    private static var sharesScreen: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["POCKETPILOT_NO_CAPTURE"] == nil
+        #else
+        true
+        #endif
+    }
+
     /// Drops the link so the next run reconnects, for example after LocalDevVPN restarts.
     func reset() {
         connecting?.cancel()
@@ -41,7 +52,7 @@ final class Connection {
 
     private func connect(_ pairing: PairingFile) async throws(DeviceError) -> Phone {
         state = .connecting
-        let display = try? await DisplayCapture.start()
+        let display = Self.sharesScreen ? try? await DisplayCapture.start() : nil
         do {
             let phone = try await Phone.connect(pairing: pairing, display: display)
             self.phone = phone

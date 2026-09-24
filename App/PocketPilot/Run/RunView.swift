@@ -1,5 +1,6 @@
 import AgentCore
 import CoreGraphics
+import Foundation
 import SwiftUI
 
 struct RunView: View {
@@ -70,6 +71,11 @@ struct RunView: View {
             }
             .task {
                 isShowingSetup = !setup.isReady
+                #if DEBUG
+                if let goal = ProcessInfo.processInfo.environment["POCKETPILOT_GOAL"], let pairing = setup.pairing {
+                    model.start(goal, pairing: pairing, pilot: setup.pilot)
+                }
+                #endif
             }
         }
     }

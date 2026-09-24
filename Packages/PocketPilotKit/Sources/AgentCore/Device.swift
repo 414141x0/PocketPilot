@@ -13,6 +13,8 @@ extension Device {
 public enum DeviceError: Error, Sendable, Hashable {
     /// LocalDevVPN is not connected, so the device cannot reach itself.
     case tunnelUnavailable
+    /// Establishing the link failed at a specific stage; `detail` names it.
+    case connectionFailed(String)
     /// The pairing file is missing, malformed, or no longer trusted by the device.
     case pairingRejected
     /// The Developer Disk Image is not mounted, so CoreDevice services are absent.
