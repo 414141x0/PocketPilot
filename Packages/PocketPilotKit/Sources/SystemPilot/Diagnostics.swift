@@ -2,6 +2,7 @@
 public import CoreGraphics
 import AgentCore
 import FoundationModels
+import PilotSchema
 
 extension SystemPilot {
     /// Runs increasingly demanding requests against the on-device model and reports each outcome,
