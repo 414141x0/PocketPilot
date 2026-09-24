@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use idevice::core_device::{
-    AppListEntry, AppServiceClient, ButtonState, CallInfoBlob, DisplayServiceClient, ImageFormat,
-    IndigoHidClient, ReportBlock, ScreenCaptureServiceClient, SenderReport,
-    TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
-    build_liveness, build_screen_audio_offer, build_screen_video_offer,
+    AppListEntry, AppServiceClient, ButtonState, CallInfoBlob, DisplayServiceClient,
+    GENERAL_PASTEBOARD, ImageFormat, IndigoHidClient, PasteboardServiceClient, ReportBlock,
+    ScreenCaptureServiceClient, SenderReport, TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE,
+    UniversalHidServiceClient, build_liveness, build_screen_audio_offer, build_screen_video_offer,
     build_start_audio_parameters, build_start_video_parameters, is_rtcp,
 };
 use idevice::core_device_proxy::CoreDeviceProxy;
@@ -24,6 +24,10 @@ use tokio::sync::{mpsc, oneshot};
 
 const CLIENT_SUPPORTED_FEATURES: u64 = 140;
 const KEY_LEFT_SHIFT: u64 = 0xE1;
+const KEY_LEFT_COMMAND: u64 = 0xE3;
+const KEY_V: u64 = 0x19;
+const CLIPBOARD_REPLACED_NOTE: &str =
+    "The device clipboard was replaced; iOS may ask to allow pasting.";
 const VIDEO_SENDER_PORT: u16 = 50_001;
 
 /// Error categories returned by PilotBridge. The message carries operation-specific detail.
@@ -51,7 +55,8 @@ pub enum PP_Button {
     VolumeDown = 3,
 }
 
-/// Called once when an operation finishes. `message` is valid only for the callback duration.
+/// Called once when an operation finishes. `message` is valid only for the callback duration and
+/// may carry an informational note when `error` is `PP_Error::Ok`.
 #[allow(non_camel_case_types)]
 pub type PP_CompletionCallback =
     Option<unsafe extern "C" fn(ctx: *mut c_void, error: PP_Error, message: *const c_char)>;
@@ -117,16 +122,31 @@ struct Completion {
 
 impl Completion {
     fn finish(self, result: Result<(), BridgeError>) {
+        self.finish_with_note(result, None);
+    }
+
+    fn finish_with_note(self, result: Result<(), BridgeError>, note: Option<&str>) {
         let Some(callback) = self.callback else {
             return;
         };
         match result {
-            Ok(()) => unsafe { callback(self.context as *mut c_void, PP_Error::Ok, ptr::null()) },
+            Ok(()) => match note {
+                Some(note) => with_message(note.to_owned(), |message| unsafe {
+                    callback(self.context as *mut c_void, PP_Error::Ok, message)
+                }),
+                None => unsafe { callback(self.context as *mut c_void, PP_Error::Ok, ptr::null()) },
+            },
             Err(error) => with_message(error.message, |message| unsafe {
                 callback(self.context as *mut c_void, error.code, message)
             }),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TextEntryOutcome {
+    Keyboard,
+    ClipboardReplaced,
 }
 
 #[derive(Clone, Copy)]
@@ -227,6 +247,10 @@ enum Command {
         button: PP_Button,
         completion: Completion,
     },
+    PressKey {
+        usage: u64,
+        completion: Completion,
+    },
     LaunchApp {
         bundle_id: String,
         completion: Completion,
@@ -247,6 +271,7 @@ struct ConnectedSession {
     touch: UniversalHidServiceClient<Box<dyn ReadWrite>>,
     keyboard: IndigoHidClient<Box<dyn ReadWrite>>,
     apps: AppServiceClient<Box<dyn ReadWrite>>,
+    pasteboard: Option<PasteboardServiceClient<Box<dyn ReadWrite>>>,
     display: DisplayServiceClient<Box<dyn ReadWrite>>,
     ax_commands: mpsc::UnboundedSender<AxCommand>,
     _adapter: AdapterHandle,
@@ -313,6 +338,7 @@ impl ConnectedSession {
             touch,
             keyboard,
             apps,
+            pasteboard: None,
             display,
             ax_commands,
             _adapter: adapter,
@@ -343,6 +369,50 @@ impl ConnectedSession {
         validate_normalized(x, "x")?;
         validate_normalized(y, "y")?;
         Ok((scale_coordinate(x), scale_coordinate(y)))
+    }
+
+    async fn type_text(&mut self, text: &str) -> Result<TextEntryOutcome, BridgeError> {
+        if let Some(keys) = keyboard_sequence(text) {
+            type_keys(&mut self.keyboard, keys).await?;
+            return Ok(TextEntryOutcome::Keyboard);
+        }
+
+        self.set_pasteboard_text(text).await?;
+        if let Err(error) = send_chord(&mut self.keyboard, KEY_LEFT_COMMAND, KEY_V).await {
+            return Err(BridgeError::new(
+                error.code,
+                format!(
+                    "clipboard was replaced, but paste shortcut failed: {}",
+                    error.message
+                ),
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Ok(TextEntryOutcome::ClipboardReplaced)
+    }
+
+    async fn set_pasteboard_text(&mut self, text: &str) -> Result<(), BridgeError> {
+        if self.pasteboard.is_none() {
+            self.pasteboard = Some(
+                PasteboardServiceClient::connect_rsd(&mut self._adapter, &mut self._handshake)
+                    .await
+                    .map_err(|error| {
+                        BridgeError::service("pasteboard service unavailable", error)
+                    })?,
+            );
+        }
+
+        let result = self
+            .pasteboard
+            .as_mut()
+            .expect("pasteboard client was connected")
+            .set_text(text, GENERAL_PASTEBOARD)
+            .await;
+        if let Err(error) = result {
+            self.pasteboard = None;
+            return Err(BridgeError::service("pasteboard update failed", error));
+        }
+        Ok(())
     }
 
     async fn run_command(&mut self, command: Command) -> bool {
@@ -403,11 +473,18 @@ impl ConnectedSession {
                 .await;
                 completion.finish(result);
             }
-            Command::TypeText { text, completion } => {
-                completion.finish(type_text(&mut self.keyboard, &text).await);
-            }
+            Command::TypeText { text, completion } => match self.type_text(&text).await {
+                Ok(TextEntryOutcome::Keyboard) => completion.finish(Ok(())),
+                Ok(TextEntryOutcome::ClipboardReplaced) => {
+                    completion.finish_with_note(Ok(()), Some(CLIPBOARD_REPLACED_NOTE));
+                }
+                Err(error) => completion.finish(Err(error)),
+            },
             Command::Press { button, completion } => {
                 completion.finish(press_button(&mut self.keyboard, button).await);
+            }
+            Command::PressKey { usage, completion } => {
+                completion.finish(press_key(&mut self.keyboard, usage).await);
             }
             Command::LaunchApp {
                 bundle_id,
@@ -538,6 +615,7 @@ fn finish_unavailable(command: Command, detail: &str) {
         | Command::Swipe { completion, .. }
         | Command::TypeText { completion, .. }
         | Command::Press { completion, .. }
+        | Command::PressKey { completion, .. }
         | Command::LaunchApp { completion, .. } => completion.finish(Err(error())),
         Command::Shutdown => {}
     }
@@ -737,34 +815,35 @@ fn call_info() -> CallInfoBlob {
     }
 }
 
-async fn type_text(
+async fn type_keys(
     keyboard: &mut IndigoHidClient<Box<dyn ReadWrite>>,
-    text: &str,
+    keys: Vec<(u64, bool)>,
 ) -> Result<(), BridgeError> {
-    let keys: Vec<_> = text
-        .chars()
-        .map(|character| {
-            ascii_to_usage(character).ok_or_else(|| {
-                BridgeError::new(
-                    PP_Error::Unsupported,
-                    format!("cannot type non-US-keyboard character {character:?}"),
-                )
-            })
-        })
-        .collect::<Result<_, _>>()?;
-
     for (usage, shift) in keys {
         if shift {
-            send_key(keyboard, KEY_LEFT_SHIFT, ButtonState::Down).await?;
+            send_chord(keyboard, KEY_LEFT_SHIFT, usage).await?;
+        } else {
+            press_key(keyboard, usage).await?;
         }
-        send_key(keyboard, usage, ButtonState::Down).await?;
-        send_key(keyboard, usage, ButtonState::Up).await?;
-        if shift {
-            send_key(keyboard, KEY_LEFT_SHIFT, ButtonState::Up).await?;
-        }
-        tokio::time::sleep(Duration::from_millis(12)).await;
     }
     Ok(())
+}
+
+async fn send_chord(
+    keyboard: &mut IndigoHidClient<Box<dyn ReadWrite>>,
+    modifier: u64,
+    usage: u64,
+) -> Result<(), BridgeError> {
+    send_key(keyboard, modifier, ButtonState::Down).await?;
+    let key_result = async {
+        send_key(keyboard, usage, ButtonState::Down).await?;
+        send_key(keyboard, usage, ButtonState::Up).await
+    }
+    .await;
+    let modifier_result = send_key(keyboard, modifier, ButtonState::Up).await;
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    key_result?;
+    modifier_result
 }
 
 async fn send_key(
@@ -797,6 +876,20 @@ async fn press_button(
         .send_button(0x0C, usage_code, ButtonState::Up)
         .await
         .map_err(|error| BridgeError::service("button release failed", error))
+}
+
+async fn press_key(
+    keyboard: &mut IndigoHidClient<Box<dyn ReadWrite>>,
+    usage: u64,
+) -> Result<(), BridgeError> {
+    send_key(keyboard, usage, ButtonState::Down).await?;
+    send_key(keyboard, usage, ButtonState::Up).await?;
+    tokio::time::sleep(Duration::from_millis(12)).await;
+    Ok(())
+}
+
+fn is_supported_key_usage(usage: u64) -> bool {
+    matches!(usage, 0x28..=0x2B)
 }
 
 fn validate_normalized(value: f64, name: &str) -> Result<(), BridgeError> {
@@ -876,6 +969,10 @@ fn ascii_to_usage(character: char) -> Option<(u64, bool)> {
         '?' => (0x38, true),
         _ => return None,
     })
+}
+
+fn keyboard_sequence(text: &str) -> Option<Vec<(u64, bool)>> {
+    text.chars().map(ascii_to_usage).collect()
 }
 
 fn with_message(message: String, body: impl FnOnce(*const c_char)) {
@@ -1092,7 +1189,12 @@ pub unsafe extern "C" fn pp_swipe(
     );
 }
 
-/// Copies `utf8` before returning.
+/// Copies `utf8` before returning and types it with the US keyboard layout when possible.
+///
+/// Text containing an unmappable character replaces the general pasteboard and sends Command-V.
+/// That successful path returns `PP_Error_Ok` with a non-null informational callback message; iOS
+/// may present a paste-permission dialog. The pasteboard is intentionally not restored while that
+/// dialog may be pending.
 ///
 /// # Safety
 ///
@@ -1124,6 +1226,31 @@ pub unsafe extern "C" fn pp_type_text(
         }
     };
     send_command(session, Command::TypeText { text, completion });
+}
+
+/// Presses and releases a supported USB HID keyboard usage.
+///
+/// Supported usages are Return (`0x28`), Escape (`0x29`), Delete (`0x2A`), and Tab (`0x2B`).
+///
+/// # Safety
+///
+/// `session` must remain live until this call returns. Callback state must outlive the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pp_press_key(
+    session: *mut PP_Session,
+    usage: u64,
+    callback: PP_CompletionCallback,
+    context: *mut c_void,
+) {
+    let completion = completion(callback, context);
+    if !is_supported_key_usage(usage) {
+        completion.finish(Err(BridgeError::new(
+            PP_Error::InvalidArgument,
+            format!("unsupported keyboard usage 0x{usage:02X}"),
+        )));
+        return;
+    }
+    send_command(session, Command::PressKey { usage, completion });
 }
 
 /// Presses and releases a supported hardware button.
@@ -1257,6 +1384,22 @@ pub unsafe extern "C" fn pp_ax_snapshot(
 mod tests {
     use super::*;
 
+    struct CallbackCapture {
+        error: Option<PP_Error>,
+        message: Option<String>,
+    }
+
+    unsafe extern "C" fn capture_completion(
+        context: *mut c_void,
+        error: PP_Error,
+        message: *const c_char,
+    ) {
+        let capture = unsafe { &mut *context.cast::<CallbackCapture>() };
+        capture.error = Some(error);
+        capture.message = (!message.is_null())
+            .then(|| unsafe { CStr::from_ptr(message).to_string_lossy().into_owned() });
+    }
+
     #[test]
     fn reads_png_dimensions() {
         let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
@@ -1312,8 +1455,43 @@ mod tests {
     fn maps_us_keyboard_characters() {
         assert_eq!(ascii_to_usage('a'), Some((0x04, false)));
         assert_eq!(ascii_to_usage('A'), Some((0x04, true)));
+        assert_eq!(ascii_to_usage('@'), Some((0x1F, true)));
+        assert_eq!(ascii_to_usage('{'), Some((0x2F, true)));
         assert_eq!(ascii_to_usage('?'), Some((0x38, true)));
         assert_eq!(ascii_to_usage('é'), None);
+        assert!((0x20_u8..=0x7E).all(|byte| ascii_to_usage(char::from(byte)).is_some()));
+    }
+
+    #[test]
+    fn uses_pasteboard_for_the_entire_string_when_any_character_is_unmappable() {
+        assert!(keyboard_sequence("Agent@example.com {?}").is_some());
+        assert!(keyboard_sequence("").is_some());
+        assert!(keyboard_sequence("Agent café").is_none());
+    }
+
+    #[test]
+    fn reports_clipboard_replacement_as_a_success_note() {
+        let mut capture = CallbackCapture {
+            error: None,
+            message: None,
+        };
+        Completion {
+            callback: Some(capture_completion),
+            context: (&mut capture as *mut CallbackCapture) as usize,
+        }
+        .finish_with_note(Ok(()), Some(CLIPBOARD_REPLACED_NOTE));
+
+        assert_eq!(capture.error, Some(PP_Error::Ok));
+        assert_eq!(capture.message.as_deref(), Some(CLIPBOARD_REPLACED_NOTE));
+    }
+
+    #[test]
+    fn limits_public_key_presses_to_navigation_and_editing() {
+        for usage in [0x28, 0x29, 0x2A, 0x2B] {
+            assert!(is_supported_key_usage(usage));
+        }
+        assert!(!is_supported_key_usage(KEY_LEFT_COMMAND));
+        assert!(!is_supported_key_usage(KEY_V));
     }
 
     #[test]

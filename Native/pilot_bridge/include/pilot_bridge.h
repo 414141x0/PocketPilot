@@ -38,7 +38,8 @@ typedef enum PP_Button {
 typedef struct PP_Session PP_Session;
 
 /**
- * Called once when an operation finishes. `message` is valid only for the callback duration.
+ * Called once when an operation finishes. `message` is valid only for the callback duration and
+ * may carry an informational note when `error` is `PP_Error::Ok`.
  */
 typedef void (*PP_CompletionCallback)(void *ctx, enum PP_Error error, const char *message);
 
@@ -139,7 +140,12 @@ void pp_swipe(struct PP_Session *session,
               void *context);
 
 /**
- * Copies `utf8` before returning.
+ * Copies `utf8` before returning and types it with the US keyboard layout when possible.
+ *
+ * Text containing an unmappable character replaces the general pasteboard and sends Command-V.
+ * That successful path returns `PP_Error_Ok` with a non-null informational callback message; iOS
+ * may present a paste-permission dialog. The pasteboard is intentionally not restored while that
+ * dialog may be pending.
  *
  * # Safety
  *
@@ -148,6 +154,20 @@ void pp_swipe(struct PP_Session *session,
  */
 void pp_type_text(struct PP_Session *session,
                   const char *utf8,
+                  PP_CompletionCallback callback,
+                  void *context);
+
+/**
+ * Presses and releases a supported USB HID keyboard usage.
+ *
+ * Supported usages are Return (`0x28`), Escape (`0x29`), Delete (`0x2A`), and Tab (`0x2B`).
+ *
+ * # Safety
+ *
+ * `session` must remain live until this call returns. Callback state must outlive the callback.
+ */
+void pp_press_key(struct PP_Session *session,
+                  uint64_t usage,
                   PP_CompletionCallback callback,
                   void *context);
 
