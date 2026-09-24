@@ -1,4 +1,5 @@
 #if DEBUG
+import BackgroundTasks
 import Network
 import Foundation
 import OSLog
@@ -10,6 +11,8 @@ nonisolated enum PortProbe {
 
     static func run(host: String = "10.7.0.1") async {
         let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "Probe")
+        let resources = BGTaskScheduler.supportedResources
+        log.info("continued-processing resources: gpu=\(resources.contains(.gpu)) raw=\(resources.rawValue)")
         for address in ["127.0.0.1", "10.7.1.1", host] {
             let outcome = await connect(host: address, port: 62078)
             log.info("\(address, privacy: .public):62078 → \(outcome, privacy: .public)")
