@@ -47,6 +47,13 @@ struct RunView: View {
                     model.stop()
                 }
             }
+            #if DEBUG
+            .overlay(alignment: .topTrailing) {
+                if GPUProbe.shared.mode != nil {
+                    GPUProbeView().frame(width: 160, height: 90)
+                }
+            }
+            #endif
             .navigationTitle("PocketPilot")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
