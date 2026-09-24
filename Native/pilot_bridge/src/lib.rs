@@ -225,6 +225,11 @@ enum Command {
     },
     ScreenSize(SizeCompletion),
     AxSnapshot(BytesCompletion),
+    AxHitTest {
+        x: f64,
+        y: f64,
+        completion: BytesCompletion,
+    },
     Shutdown,
 }
 
@@ -419,6 +424,19 @@ impl ConnectedSession {
                 };
                 completion.finish(result);
             }
+            Command::AxHitTest { x, y, completion } => {
+                let result = match &mut self.ax {
+                    Ok(ax) => ax
+                        .hit_test(x, y)
+                        .await
+                        .map_err(|error| BridgeError::new(PP_Error::Service, error)),
+                    Err(error) => Err(BridgeError::new(
+                        PP_Error::Service,
+                        format!("accessibility service unavailable: {error}"),
+                    )),
+                };
+                completion.finish(result);
+            }
             Command::Shutdown => {
                 let _ = self.display.stop_media_stream().await;
                 return false;
@@ -465,9 +483,9 @@ fn finish_unavailable(command: Command, detail: &str) {
         )
     };
     match command {
-        Command::Screenshot(completion) | Command::AxSnapshot(completion) => {
-            completion.finish(Err(error()))
-        }
+        Command::Screenshot(completion)
+        | Command::AxSnapshot(completion)
+        | Command::AxHitTest { completion, .. } => completion.finish(Err(error())),
         Command::ScreenSize(completion) => completion.finish(Err(error())),
         Command::Tap { completion, .. }
         | Command::LongPress { completion, .. }
@@ -1124,11 +1142,11 @@ pub unsafe extern "C" fn pp_screen_size(
     );
 }
 
-/// Returns a JSON accessibility focus-order snapshot.
+/// Returns a JSON accessibility hierarchy snapshot.
 ///
-/// The envelope includes `elements`, `complete`, `geometryAvailable`, and a `rawSample` from the
-/// first focus event. Role, traits, and unit-coordinate frame fields are populated only when the
-/// daemon includes those values in its raw focus payload.
+/// The top-level JSON value is an array of nodes. Each node includes `id`, `token_hex`, `role`,
+/// `label`, `value`, `traits`, `children`, and `ignored`. Traversal is capped at depth 12 and 300
+/// nodes. Geometry is intentionally supplied separately by OCR and `pp_ax_hit_test`.
 ///
 /// # Safety
 ///
@@ -1142,6 +1160,32 @@ pub unsafe extern "C" fn pp_ax_snapshot(
     send_command(
         session,
         Command::AxSnapshot(bytes_completion(callback, context)),
+    );
+}
+
+/// Returns the uppercase hexadecimal accessibility token at a normalized display coordinate.
+///
+/// Coordinates use portrait display space and must each be finite and in the inclusive range
+/// 0...1. The callback bytes contain UTF-8 text and are valid only for the callback duration.
+///
+/// # Safety
+///
+/// `session` must remain live until this call returns. Callback state must outlive the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pp_ax_hit_test(
+    session: *mut PP_Session,
+    x: f64,
+    y: f64,
+    callback: PP_BytesCallback,
+    context: *mut c_void,
+) {
+    send_command(
+        session,
+        Command::AxHitTest {
+            x,
+            y,
+            completion: bytes_completion(callback, context),
+        },
     );
 }
 

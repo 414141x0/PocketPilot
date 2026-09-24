@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::time::Duration;
 
@@ -7,41 +7,137 @@ use idevice::dvt::remote_server::RemoteServerClient;
 use idevice::rsd::RsdHandshake;
 use idevice::tcp::handle::AdapterHandle;
 use idevice::{Idevice, ReadWrite};
-use plist::{Dictionary, Value};
+use plist::{Dictionary, Uid, Value};
 use serde::Serialize;
 
 const SERVICE_NAME: &str = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote";
-const ELEMENT_LIMIT: usize = 200;
+const MAX_DEPTH: usize = 12;
+const MAX_NODES: usize = 300;
 
 pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Snapshot {
-    elements: Vec<Element>,
-    complete: bool,
-    geometry_available: bool,
-    raw_sample: Option<serde_json::Value>,
-}
-
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct Element {
     id: String,
+    token_hex: String,
+    role: Option<String>,
     label: Option<String>,
     value: Option<String>,
-    role: Option<String>,
     traits: Vec<String>,
-    frame: Option<UnitFrame>,
+    children: Vec<String>,
+    ignored: bool,
 }
 
-#[derive(Serialize)]
-struct UnitFrame {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+#[derive(Default)]
+struct SnapshotBuilder {
+    elements: Vec<Element>,
+    indexes_by_token: HashMap<String, usize>,
+    used_ids: HashSet<String>,
+}
+
+impl SnapshotBuilder {
+    fn merge_tree(&mut self, node: &Value, depth: usize) -> Option<String> {
+        if depth > MAX_DEPTH {
+            return None;
+        }
+        let token = node_token_hex(node)?;
+        let existing = self.indexes_by_token.get(&token).copied();
+        if existing.is_none() && self.elements.len() >= MAX_NODES {
+            return None;
+        }
+
+        let preferred_id = direct_field(node, "AuditElementValue_v1")
+            .and_then(|element| direct_string_field(element, "AccessibilityIdentifier_v1"))
+            .filter(|value| !value.is_empty());
+        let role = direct_string_field(node, "HumanReadableRoleDescriptionValue_v1")
+            .filter(|value| !value.is_empty());
+        let label = direct_string_field(node, "HumanReadableDescriptionValue_v1")
+            .filter(|value| !value.is_empty());
+        let ignored = direct_bool_field(node, "IsIgnoredValue_v1").unwrap_or(false);
+        let index = match existing {
+            Some(index) => {
+                let element = &mut self.elements[index];
+                if element.role.is_none() {
+                    element.role = role.clone();
+                }
+                if element.label.is_none() {
+                    element.label = label;
+                }
+                element.ignored = ignored;
+                index
+            }
+            None => {
+                let id = preferred_id
+                    .filter(|candidate| !self.used_ids.contains(candidate))
+                    .unwrap_or_else(|| token.clone());
+                self.used_ids.insert(id.clone());
+                let index = self.elements.len();
+                self.indexes_by_token.insert(token.clone(), index);
+                self.elements.push(Element {
+                    id,
+                    token_hex: token,
+                    role: role.clone(),
+                    label,
+                    value: None,
+                    traits: role.into_iter().collect(),
+                    children: Vec::new(),
+                    ignored,
+                });
+                index
+            }
+        };
+        let id = self.elements[index].id.clone();
+
+        let child_values = direct_field(node, "ChildrenValue_v1")
+            .and_then(scalar)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let child_ids = child_values
+            .iter()
+            .filter_map(|child| self.merge_tree(child, depth + 1))
+            .collect();
+        self.elements[index].children = child_ids;
+        Some(id)
+    }
+
+    fn merge_focus(&mut self, payload: &Value) {
+        let Some(token) = token_hex(payload) else {
+            return;
+        };
+        let index = match self.indexes_by_token.get(&token).copied() {
+            Some(index) => index,
+            None if self.elements.len() < MAX_NODES => {
+                let index = self.elements.len();
+                self.indexes_by_token.insert(token.clone(), index);
+                self.used_ids.insert(token.clone());
+                self.elements.push(Element {
+                    id: token.clone(),
+                    token_hex: token,
+                    role: None,
+                    label: None,
+                    value: None,
+                    traits: Vec::new(),
+                    children: Vec::new(),
+                    ignored: false,
+                });
+                index
+            }
+            None => return,
+        };
+        if let Some(label) =
+            string_field(payload, "CaptionTextValue_v1").filter(|value| !value.is_empty())
+        {
+            self.elements[index].label = Some(label);
+        }
+        if let Some(value) =
+            string_field(payload, "SpokenDescriptionValue_v1").filter(|value| !value.is_empty())
+        {
+            self.elements[index].value = Some(value);
+        }
+    }
 }
 
 impl AxClient {
@@ -85,13 +181,11 @@ impl AxClient {
         .await?;
         self.move_next().await?;
 
-        let mut visited = HashSet::new();
-        let mut elements = Vec::new();
-        let mut raw_sample = None;
+        let mut builder = SnapshotBuilder::default();
+        let mut visited_focus_tokens = HashSet::new();
         let mut consecutive_timeouts = 0;
-        let mut complete = false;
 
-        while elements.len() < ELEMENT_LIMIT {
+        while builder.elements.len() < MAX_NODES {
             let message = match tokio::time::timeout(
                 Duration::from_secs(1),
                 self.dtx.read_message(0),
@@ -121,26 +215,52 @@ impl AxClient {
             let Some(payload) = decode_first_argument(&message)? else {
                 continue;
             };
-            if raw_sample.is_none() {
-                raw_sample = serde_json::to_value(&payload).ok();
-            }
-            let element = element_from_payload(&payload, elements.len());
-            if !visited.insert(element.id.clone()) {
-                complete = true;
+            let Some(focus_token) = token_hex(&payload) else {
+                continue;
+            };
+            if !visited_focus_tokens.insert(focus_token) {
                 break;
             }
-            elements.push(element);
+
+            let element = find_field(&payload, "ElementValue_v1").cloned();
+            let hierarchy =
+                find_attribute_descriptor(&payload, "_AXHierarchyElementsAttribute").cloned();
+            if let (Some(element), Some(hierarchy)) = (element, hierarchy)
+                && let Ok(tree) = self.fetch_attribute(element, hierarchy).await
+            {
+                builder.merge_tree(&tree, 0);
+            }
+            builder.merge_focus(&payload);
             self.move_next().await?;
         }
 
-        let geometry_available = elements.iter().any(|element| element.frame.is_some());
-        serde_json::to_vec(&Snapshot {
-            elements,
-            complete,
-            geometry_available,
-            raw_sample,
+        serde_json::to_vec(&builder.elements)
+            .map_err(|error| format!("AX JSON serialization failed: {error}"))
+    }
+
+    pub(crate) async fn hit_test(&mut self, x: f64, y: f64) -> Result<Vec<u8>, String> {
+        validate_unit_coordinate(x, "x")?;
+        validate_unit_coordinate(y, "y")?;
+        self.invoke(
+            "deviceSetAppMonitoringEnabled:",
+            vec![AuxValue::archived_value(true)],
+        )
+        .await?;
+        self.invoke(
+            "deviceInspectorEnable:",
+            vec![AuxValue::archived_value(true)],
+        )
+        .await?;
+        let point = archived_transport_point(x, y)?;
+        let element = self
+            .request(
+                "deviceFetchElementAtNormalizedDeviceCoordinate:",
+                vec![AuxValue::primitive_buffer(point)],
+            )
+            .await?;
+        token_hex(&element).map(String::into_bytes).ok_or_else(|| {
+            format!("AX hit test returned an element without a platform token: {element:?}")
         })
-        .map_err(|error| format!("AX JSON serialization failed: {error}"))
     }
 
     async fn invoke(&mut self, selector: &str, arguments: Vec<AuxValue>) -> Result<(), String> {
@@ -148,6 +268,60 @@ impl AxClient {
             .call_method(0, Some(selector), Some(arguments), false)
             .await
             .map_err(|error| format!("AX selector {selector} failed: {error:?}"))
+    }
+
+    async fn request(&mut self, selector: &str, arguments: Vec<AuxValue>) -> Result<Value, String> {
+        self.dtx
+            .call_method(0, Some(selector), Some(arguments), true)
+            .await
+            .map_err(|error| format!("AX request {selector} failed: {error:?}"))?;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let message = self
+                    .dtx
+                    .read_message(0)
+                    .await
+                    .map_err(|error| format!("AX response read failed: {error:?}"))?;
+                let incoming_selector = message.data.as_ref().and_then(Value::as_string);
+                if incoming_selector.is_some_and(|value| value.starts_with("host")) {
+                    continue;
+                }
+                if message
+                    .data
+                    .as_ref()
+                    .and_then(Value::as_dictionary)
+                    .is_some_and(|dictionary| dictionary.contains_key("NSCode"))
+                {
+                    let archive = message
+                        .raw_data
+                        .as_deref()
+                        .and_then(|bytes| Value::from_reader(std::io::Cursor::new(bytes)).ok());
+                    return Err(format!(
+                        "AX request {selector} returned NSError: {archive:?}"
+                    ));
+                }
+                if let Some(value) = message.data {
+                    return Ok(value);
+                }
+                if let Some(value) = decode_first_argument(&message)? {
+                    return Ok(value);
+                }
+                return Err(format!("AX request {selector} returned no value"));
+            }
+        })
+        .await
+        .map_err(|_| format!("AX request {selector} timed out"))?
+    }
+
+    async fn fetch_attribute(&mut self, element: Value, attribute: Value) -> Result<Value, String> {
+        self.request(
+            "deviceElement:valueForAttribute:",
+            vec![
+                AuxValue::archived_value(element),
+                AuxValue::archived_value(attribute),
+            ],
+        )
+        .await
     }
 
     async fn move_next(&mut self) -> Result<(), String> {
@@ -221,6 +395,49 @@ async fn flush_initial_messages(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>
     }
 }
 
+fn archived_transport_point(x: f64, y: f64) -> Result<Vec<u8>, String> {
+    let objects = Value::Array(vec![
+        Value::String("$null".to_string()),
+        Value::Dictionary(Dictionary::from_iter([
+            ("$class".to_string(), Value::Uid(Uid::new(3))),
+            ("NS.pointval".to_string(), Value::Uid(Uid::new(2))),
+            ("NS.special".to_string(), Value::from(1_i64)),
+        ])),
+        Value::String(format!("{{{x:.17}, {y:.17}}}")),
+        Value::Dictionary(Dictionary::from_iter([
+            (
+                "$classes".to_string(),
+                Value::Array(vec![
+                    Value::String("NSValue".to_string()),
+                    Value::String("NSObject".to_string()),
+                ]),
+            ),
+            (
+                "$classname".to_string(),
+                Value::String("NSValue".to_string()),
+            ),
+        ])),
+    ]);
+    let archive = Value::Dictionary(Dictionary::from_iter([
+        (
+            "$archiver".to_string(),
+            Value::String("NSKeyedArchiver".to_string()),
+        ),
+        ("$objects".to_string(), objects),
+        (
+            "$top".to_string(),
+            Value::Dictionary(Dictionary::from_iter([(
+                "root".to_string(),
+                Value::Uid(Uid::new(1)),
+            )])),
+        ),
+        ("$version".to_string(), Value::from(100_000_i64)),
+    ]));
+    let mut bytes = Vec::new();
+    plist::to_writer_binary(&mut bytes, &archive)
+        .map_err(|error| format!("AX point archive encoding failed: {error}"))?;
+    Ok(bytes)
+}
 fn passthrough(value: impl Into<Value>) -> Value {
     Value::Dictionary(Dictionary::from_iter([
         (
@@ -247,35 +464,23 @@ fn decode_first_argument(message: &Message) -> Result<Option<Value>, String> {
     Ok(Some(value))
 }
 
-fn element_from_payload(payload: &Value, index: usize) -> Element {
-    let identifier = find_field(payload, "PlatformElementValue_v1")
-        .and_then(scalar)
-        .and_then(Value::as_data)
-        .map(hex)
-        .unwrap_or_else(|| format!("missing-{index}"));
-    let label = string_field(payload, "CaptionTextValue_v1");
-    let value = string_field(payload, "SpokenDescriptionValue_v1");
-    let role = [
-        "RoleValue_v1",
-        "ElementRoleValue_v1",
-        "RoleDescriptionValue_v1",
-    ]
-    .into_iter()
-    .find_map(|key| string_field(payload, key));
-    let traits = ["TraitsValue_v1", "TraitValue_v1"]
-        .into_iter()
-        .find_map(|key| find_field(payload, key).and_then(trait_strings))
-        .unwrap_or_default();
-    let frame = ["ElementRectValue_v1", "FrameValue_v1"]
-        .into_iter()
-        .find_map(|key| string_field(payload, key).and_then(|value| parse_unit_frame(&value)));
-    Element {
-        id: identifier,
-        label,
-        value,
-        role,
-        traits,
-        frame,
+fn find_attribute_descriptor<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
+    match value {
+        Value::Dictionary(dictionary) => {
+            if dictionary.get("ObjectType").and_then(Value::as_string)
+                == Some("AXAuditElementAttribute_v1")
+                && string_field(value, "AttributeNameValue_v1").as_deref() == Some(name)
+            {
+                return Some(value);
+            }
+            dictionary
+                .values()
+                .find_map(|value| find_attribute_descriptor(value, name))
+        }
+        Value::Array(array) => array
+            .iter()
+            .find_map(|value| find_attribute_descriptor(value, name)),
+        _ => None,
     }
 }
 
@@ -287,6 +492,10 @@ fn find_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
         Value::Array(array) => array.iter().find_map(|value| find_field(value, key)),
         _ => None,
     }
+}
+
+fn direct_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    scalar(value)?.as_dictionary()?.get(key)
 }
 
 fn scalar(mut value: &Value) -> Option<&Value> {
@@ -308,54 +517,39 @@ fn string_field(value: &Value, key: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn trait_strings(value: &Value) -> Option<Vec<String>> {
-    match scalar(value)? {
-        Value::Array(values) => Some(
-            values
-                .iter()
-                .filter_map(|value| scalar(value).and_then(Value::as_string))
-                .map(ToOwned::to_owned)
-                .collect(),
-        ),
-        Value::String(value) => Some(vec![value.clone()]),
-        Value::Integer(value) => Some(vec![value.to_string()]),
-        _ => None,
-    }
+fn direct_string_field(value: &Value, key: &str) -> Option<String> {
+    scalar(direct_field(value, key)?)
+        .and_then(Value::as_string)
+        .map(ToOwned::to_owned)
 }
 
-fn parse_unit_frame(value: &str) -> Option<UnitFrame> {
-    let numbers: Vec<f64> = value
-        .split(|character: char| {
-            !(character.is_ascii_digit()
-                || character == '-'
-                || character == '+'
-                || character == '.'
-                || character == 'e'
-                || character == 'E')
-        })
-        .filter(|part| !part.is_empty())
-        .filter_map(|part| part.parse().ok())
-        .collect();
-    let [x, y, width, height] = numbers.as_slice() else {
-        return None;
-    };
-    let values = [*x, *y, *width, *height];
-    if !values.iter().all(|value| value.is_finite())
-        || *x < 0.0
-        || *y < 0.0
-        || *width < 0.0
-        || *height < 0.0
-        || *x + *width > 1.0
-        || *y + *height > 1.0
-    {
-        return None;
+fn direct_bool_field(value: &Value, key: &str) -> Option<bool> {
+    scalar(direct_field(value, key)?).and_then(Value::as_boolean)
+}
+
+fn token_hex(value: &Value) -> Option<String> {
+    find_field(value, "PlatformElementValue_v1")
+        .and_then(scalar)
+        .and_then(Value::as_data)
+        .map(hex)
+}
+
+fn node_token_hex(value: &Value) -> Option<String> {
+    let element = direct_field(value, "AuditElementValue_v1")?;
+    direct_field(element, "PlatformElementValue_v1")
+        .and_then(scalar)
+        .and_then(Value::as_data)
+        .map(hex)
+}
+
+fn validate_unit_coordinate(value: f64, name: &str) -> Result<(), String> {
+    if value.is_finite() && (0.0..=1.0).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "AX hit-test coordinate {name} must be finite and in 0...1"
+        ))
     }
-    Some(UnitFrame {
-        x: *x,
-        y: *y,
-        width: *width,
-        height: *height,
-    })
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -371,28 +565,107 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_known_focus_fields_from_wrappers() {
-        let payload = Value::Dictionary(Dictionary::from_iter([
-            (
-                "CaptionTextValue_v1".to_string(),
-                passthrough("Wi-Fi".to_string()),
-            ),
-            (
-                "ElementValue_v1".to_string(),
-                Value::Dictionary(Dictionary::from_iter([(
-                    "PlatformElementValue_v1".to_string(),
-                    passthrough(Value::Data(vec![0xAB, 0xCD])),
-                )])),
-            ),
-        ]));
-        let element = element_from_payload(&payload, 0);
-        assert_eq!(element.id, "ABCD");
-        assert_eq!(element.label.as_deref(), Some("Wi-Fi"));
+    fn flattens_hierarchy_and_uses_accessibility_identifier() {
+        let child = node(&[0x02], Some("child"), "Button", "Open", false, vec![]);
+        let root = node(&[0x01], None, "Application", "Home", false, vec![child]);
+        let mut builder = SnapshotBuilder::default();
+        assert_eq!(builder.merge_tree(&root, 0).as_deref(), Some("01"));
+        assert_eq!(builder.elements.len(), 2);
+        assert_eq!(builder.elements[0].children, ["child"]);
+        assert_eq!(builder.elements[1].token_hex, "02");
     }
 
     #[test]
-    fn accepts_only_already_normalized_frames() {
-        assert!(parse_unit_frame("{{0.1, 0.2}, {0.3, 0.4}}").is_some());
-        assert!(parse_unit_frame("{{10, 20}, {30, 40}}").is_none());
+    fn caps_hierarchy_depth() {
+        let mut value = node(&[0xFF], None, "Button", "Leaf", false, vec![]);
+        for byte in (0..=MAX_DEPTH as u8).rev() {
+            value = node(&[byte], None, "Group", "Container", false, vec![value]);
+        }
+        let mut builder = SnapshotBuilder::default();
+        builder.merge_tree(&value, 0);
+        assert_eq!(builder.elements.len(), MAX_DEPTH + 1);
+    }
+
+    #[test]
+    fn point_archive_contains_an_nsvalue() {
+        let bytes = archived_transport_point(0.38, 0.93).unwrap();
+        let archive = Value::from_reader(std::io::Cursor::new(bytes)).unwrap();
+        let objects = archive
+            .as_dictionary()
+            .and_then(|dictionary| dictionary.get("$objects"))
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(
+            objects[2].as_string(),
+            Some("{0.38000000000000000, 0.93000000000000005}")
+        );
+        assert_eq!(
+            objects[3]
+                .as_dictionary()
+                .and_then(|dictionary| dictionary.get("$classname"))
+                .and_then(Value::as_string),
+            Some("NSValue")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_hit_test_coordinates() {
+        assert!(validate_unit_coordinate(-0.01, "x").is_err());
+        assert!(validate_unit_coordinate(1.01, "x").is_err());
+        assert!(validate_unit_coordinate(f64::NAN, "x").is_err());
+    }
+
+    fn node(
+        token: &[u8],
+        identifier: Option<&str>,
+        role: &str,
+        description: &str,
+        ignored: bool,
+        children: Vec<Value>,
+    ) -> Value {
+        let mut element_fields = Dictionary::from_iter([(
+            "PlatformElementValue_v1".to_string(),
+            passthrough(Value::Data(token.to_vec())),
+        )]);
+        if let Some(identifier) = identifier {
+            element_fields.insert(
+                "AccessibilityIdentifier_v1".to_string(),
+                passthrough(identifier),
+            );
+        }
+        Value::Dictionary(Dictionary::from_iter([
+            (
+                "ObjectType".to_string(),
+                Value::String("AXAuditNode_v1".to_string()),
+            ),
+            (
+                "Value".to_string(),
+                passthrough(Value::Dictionary(Dictionary::from_iter([
+                    (
+                        "AuditElementValue_v1".to_string(),
+                        Value::Dictionary(Dictionary::from_iter([
+                            (
+                                "ObjectType".to_string(),
+                                Value::String("AXAuditElement_v1".to_string()),
+                            ),
+                            (
+                                "Value".to_string(),
+                                passthrough(Value::Dictionary(element_fields)),
+                            ),
+                        ])),
+                    ),
+                    ("ChildrenValue_v1".to_string(), passthrough(children)),
+                    (
+                        "HumanReadableDescriptionValue_v1".to_string(),
+                        passthrough(description),
+                    ),
+                    (
+                        "HumanReadableRoleDescriptionValue_v1".to_string(),
+                        passthrough(role),
+                    ),
+                    ("IsIgnoredValue_v1".to_string(), passthrough(ignored)),
+                ]))),
+            ),
+        ]))
     }
 }
