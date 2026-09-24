@@ -54,6 +54,10 @@ struct RunView: View {
                 }
             }
             #endif
+            .overlay(alignment: .bottomTrailing) {
+                KeeperLayerHost(keeper: model.keeper)
+                    .frame(width: 2, height: 2)
+            }
             .navigationTitle("PocketPilot")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
