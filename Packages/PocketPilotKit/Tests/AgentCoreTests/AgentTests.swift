@@ -205,3 +205,26 @@ extension Screenshot {
         await #expect(throws: CancellationError.self) { try await pilot.decide(step) }
     }
 }
+
+@Suite struct MarkingTests {
+    @Test func outlinesElementsWithoutChangingSize() async throws {
+        let element = Element(id: 7, role: .button, label: "OK", frame: Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
+        let screen = Screen(screenshot: .blank(width: 200, height: 400), elements: [element])
+
+        let marked = await screen.markedScreenshot()
+
+        #expect((marked.width, marked.height) == (200, 400))
+        #expect(marked.pixel(x: 50, y: 250) != screen.screenshot.pixel(x: 50, y: 250), "The box's left edge is stroked")
+        #expect(marked.pixel(x: 100, y: 200) == screen.screenshot.pixel(x: 100, y: 200), "The box's interior is untouched")
+    }
+}
+
+private extension Screenshot {
+    func pixel(x: Int, y: Int) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let context = CGContext(data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.draw(image, in: CGRect(x: -x, y: -(height - 1 - y), width: width, height: height))
+        return bytes
+    }
+}

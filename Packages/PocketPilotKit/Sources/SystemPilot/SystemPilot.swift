@@ -1,6 +1,7 @@
 public import AgentCore
 public import Foundation
 public import FoundationModels
+import CoreGraphics
 
 /// A pilot backed by Apple's on-device FoundationModels SystemLanguageModel.
 public struct SystemPilot: Pilot {
@@ -25,7 +26,8 @@ public struct SystemPilot: Pilot {
         var historyLimit = maxHistoryTurns
         var elementLimit = 60
 
-        var prompt = makePrompt(step: step, historyLimit: historyLimit, elementLimit: elementLimit)
+        let image = await step.screen.markedScreenshot().image
+        var prompt = makePrompt(step: step, image: image, historyLimit: historyLimit, elementLimit: elementLimit)
         while try await model.tokenCount(for: prompt) > budget {
             if elementLimit > 20 {
                 elementLimit -= 10
@@ -34,7 +36,7 @@ public struct SystemPilot: Pilot {
             } else {
                 break
             }
-            prompt = makePrompt(step: step, historyLimit: historyLimit, elementLimit: elementLimit)
+            prompt = makePrompt(step: step, image: image, historyLimit: historyLimit, elementLimit: elementLimit)
         }
 
         let session = LanguageModelSession(model: model, instructions: Self.instructions)
@@ -42,10 +44,10 @@ public struct SystemPilot: Pilot {
         return Self.mapDecision(response.content)
     }
 
-    private func makePrompt(step: Step, historyLimit: Int, elementLimit: Int) -> Prompt {
+    private func makePrompt(step: Step, image: CGImage, historyLimit: Int, elementLimit: Int) -> Prompt {
         Prompt {
             step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
-            Attachment(step.screen.screenshot.image).label("screenshot")
+            Attachment(image).label("screenshot")
         }
     }
 

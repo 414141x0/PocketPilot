@@ -20,7 +20,7 @@ public struct OpenAIPilot: Pilot {
 
     public func decide(_ step: Step) async throws -> Decision {
         var contentItems: [InputContent] = []
-        if let jpegData = await step.screen.screenshot.jpeg() {
+        if let jpegData = await step.screen.markedScreenshot().jpeg() {
             contentItems.append(.inputImage(InputImage(imageData: jpegData, detail: .high)))
         }
         contentItems.append(.inputText(.init(_type: .inputText, text: step.brief())))

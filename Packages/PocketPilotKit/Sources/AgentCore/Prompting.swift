@@ -53,9 +53,11 @@ extension Pilot {
         actions, a screenshot, and a list of on-screen accessibility elements. Reply with exactly one action.
 
         Elements look like `[12] button "Send" @(850,910)`: an id, role, label, optional value, \
-        center on a 1000×1000 grid (x right, y down), and flags such as disabled or focused.
+        center on a 1000×1000 grid (x right, y down), and flags such as disabled or focused. \
+        In the screenshot, each listed element is boxed and tagged with its id.
 
-        - Target elements by id whenever one matches; use grid points only for things the list lacks.
+        - Target elements by id whenever one matches. For anything unboxed, such as an icon-only \
+        button, tap its center as a grid point read from the screenshot.
         - To enter text, tap the field first, then type. Typing does not submit.
         - Scroll direction names where the content moves: "down" reveals what is below.
         - Open apps by bundle identifier when you know it; otherwise go home and use the Home Screen.
