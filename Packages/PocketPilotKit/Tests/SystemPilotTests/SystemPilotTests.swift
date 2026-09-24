@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 @testable import AgentCore
+@testable import PilotSchema
 @testable import SystemPilot
 
 @Suite struct SystemPilotTests {
