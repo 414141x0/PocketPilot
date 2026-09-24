@@ -1,3 +1,5 @@
+mod ax;
+
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::net::IpAddr;
 use std::ptr;
@@ -223,6 +225,11 @@ enum Command {
     },
     ScreenSize(SizeCompletion),
     AxSnapshot(BytesCompletion),
+    AxHitTest {
+        x: f64,
+        y: f64,
+        completion: BytesCompletion,
+    },
     Shutdown,
 }
 
@@ -232,6 +239,7 @@ struct ConnectedSession {
     keyboard: IndigoHidClient<Box<dyn ReadWrite>>,
     apps: AppServiceClient<Box<dyn ReadWrite>>,
     display: DisplayServiceClient<Box<dyn ReadWrite>>,
+    ax: Result<ax::AxClient, String>,
     _adapter: AdapterHandle,
     _handshake: RsdHandshake,
     screen_size: Option<(u32, u32)>,
@@ -287,6 +295,7 @@ impl ConnectedSession {
         let keyboard = IndigoHidClient::connect_rsd(&mut adapter, &mut handshake)
             .await
             .map_err(|error| BridgeError::service("HID service unavailable", error))?;
+        let ax = ax::AxClient::connect(&mut adapter, &handshake).await;
 
         Ok(Self {
             screenshot,
@@ -294,6 +303,7 @@ impl ConnectedSession {
             keyboard,
             apps,
             display,
+            ax,
             _adapter: adapter,
             _handshake: handshake,
             screen_size: None,
@@ -401,10 +411,32 @@ impl ConnectedSession {
                 completion.finish(result);
             }
             Command::ScreenSize(completion) => completion.finish(self.size().await),
-            Command::AxSnapshot(completion) => completion.finish(Err(BridgeError::new(
-                PP_Error::Unsupported,
-                "accessibility snapshots are not implemented",
-            ))),
+            Command::AxSnapshot(completion) => {
+                let result = match &mut self.ax {
+                    Ok(ax) => ax
+                        .snapshot()
+                        .await
+                        .map_err(|error| BridgeError::new(PP_Error::Service, error)),
+                    Err(error) => Err(BridgeError::new(
+                        PP_Error::Service,
+                        format!("accessibility service unavailable: {error}"),
+                    )),
+                };
+                completion.finish(result);
+            }
+            Command::AxHitTest { x, y, completion } => {
+                let result = match &mut self.ax {
+                    Ok(ax) => ax
+                        .hit_test(x, y)
+                        .await
+                        .map_err(|error| BridgeError::new(PP_Error::Service, error)),
+                    Err(error) => Err(BridgeError::new(
+                        PP_Error::Service,
+                        format!("accessibility service unavailable: {error}"),
+                    )),
+                };
+                completion.finish(result);
+            }
             Command::Shutdown => {
                 let _ = self.display.stop_media_stream().await;
                 return false;
@@ -451,9 +483,9 @@ fn finish_unavailable(command: Command, detail: &str) {
         )
     };
     match command {
-        Command::Screenshot(completion) | Command::AxSnapshot(completion) => {
-            completion.finish(Err(error()))
-        }
+        Command::Screenshot(completion)
+        | Command::AxSnapshot(completion)
+        | Command::AxHitTest { completion, .. } => completion.finish(Err(error())),
         Command::ScreenSize(completion) => completion.finish(Err(error())),
         Command::Tap { completion, .. }
         | Command::LongPress { completion, .. }
@@ -1110,7 +1142,11 @@ pub unsafe extern "C" fn pp_screen_size(
     );
 }
 
-/// Reserved accessibility snapshot API. Currently completes with `PP_Error::Unsupported`.
+/// Returns a JSON accessibility hierarchy snapshot.
+///
+/// The top-level JSON value is an array of nodes. Each node includes `id`, `token_hex`, `role`,
+/// `label`, `value`, `traits`, `children`, and `ignored`. Traversal is capped at depth 12 and 300
+/// nodes. Geometry is intentionally supplied separately by OCR and `pp_ax_hit_test`.
 ///
 /// # Safety
 ///
@@ -1124,6 +1160,32 @@ pub unsafe extern "C" fn pp_ax_snapshot(
     send_command(
         session,
         Command::AxSnapshot(bytes_completion(callback, context)),
+    );
+}
+
+/// Returns the uppercase hexadecimal accessibility token at a normalized display coordinate.
+///
+/// Coordinates use portrait display space and must each be finite and in the inclusive range
+/// 0...1. The callback bytes contain UTF-8 text and are valid only for the callback duration.
+///
+/// # Safety
+///
+/// `session` must remain live until this call returns. Callback state must outlive the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pp_ax_hit_test(
+    session: *mut PP_Session,
+    x: f64,
+    y: f64,
+    callback: PP_BytesCallback,
+    context: *mut c_void,
+) {
+    send_command(
+        session,
+        Command::AxHitTest {
+            x,
+            y,
+            completion: bytes_completion(callback, context),
+        },
     );
 }
 

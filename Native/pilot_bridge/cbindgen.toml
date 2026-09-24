@@ -23,6 +23,7 @@ include = [
     "pp_launch_app",
     "pp_screen_size",
     "pp_ax_snapshot",
+    "pp_ax_hit_test",
 ]
 
 [enum]

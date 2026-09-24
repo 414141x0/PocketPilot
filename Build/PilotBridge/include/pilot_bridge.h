@@ -186,12 +186,32 @@ void pp_launch_app(struct PP_Session *session,
 void pp_screen_size(struct PP_Session *session, PP_SizeCallback callback, void *context);
 
 /**
- * Reserved accessibility snapshot API. Currently completes with `PP_Error::Unsupported`.
+ * Returns a JSON accessibility hierarchy snapshot.
+ *
+ * The top-level JSON value is an array of nodes. Each node includes `id`, `token_hex`, `role`,
+ * `label`, `value`, `traits`, `children`, and `ignored`. Traversal is capped at depth 12 and 300
+ * nodes. Geometry is intentionally supplied separately by OCR and `pp_ax_hit_test`.
  *
  * # Safety
  *
  * `session` must remain live until this call returns. Callback state must outlive the callback.
  */
 void pp_ax_snapshot(struct PP_Session *session, PP_BytesCallback callback, void *context);
+
+/**
+ * Returns the uppercase hexadecimal accessibility token at a normalized display coordinate.
+ *
+ * Coordinates use portrait display space and must each be finite and in the inclusive range
+ * 0...1. The callback bytes contain UTF-8 text and are valid only for the callback duration.
+ *
+ * # Safety
+ *
+ * `session` must remain live until this call returns. Callback state must outlive the callback.
+ */
+void pp_ax_hit_test(struct PP_Session *session,
+                    double x,
+                    double y,
+                    PP_BytesCallback callback,
+                    void *context);
 
 #endif  /* PILOT_BRIDGE_H */

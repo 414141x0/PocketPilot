@@ -487,6 +487,10 @@ name = "pilot_bridge"
 version = "0.1.0"
 dependencies = [
  "idevice",
+ "ns-keyed-archive",
+ "plist",
+ "serde",
+ "serde_json",
  "tokio",
  "uuid",
 ]
