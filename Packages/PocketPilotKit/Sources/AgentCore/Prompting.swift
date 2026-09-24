@@ -3,6 +3,9 @@
 /// Coordinates are shown on a 1000×1000 grid; integers read more reliably to
 /// language models than unit fractions. Use ``Point/init(grid:_:)`` to convert back.
 extension Screen {
+    /// Unlocated controls cost tokens without a way to target them directly, so only a few are listed.
+    static let unlocatedLimit = 20
+
     /// A header line followed by one line per meaningful element, capped at `limit` elements:
     ///
     ///     screen=1290x2796 elements=2/2
@@ -15,7 +18,10 @@ extension Screen {
         lines += shown.map(\.outline)
         if meaningful.count > limit { lines.append("…+\(meaningful.count - limit) more") }
         if !unlocated.isEmpty {
-            lines.append("Also on screen, position unknown (tap them by point): " + unlocated.prefix(limit).joined(separator: ", "))
+            let shownUnlocated = unlocated.prefix(Self.unlocatedLimit)
+            var line = "Also present, position unknown (may be off-screen; point at them if visible): " + shownUnlocated.joined(separator: ", ")
+            if unlocated.count > shownUnlocated.count { line += " …+\(unlocated.count - shownUnlocated.count) more" }
+            lines.append(line)
         }
         return lines.joined(separator: "\n")
     }

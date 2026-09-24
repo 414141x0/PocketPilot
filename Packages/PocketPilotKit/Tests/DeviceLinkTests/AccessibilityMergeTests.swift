@@ -40,7 +40,12 @@ import Testing
 
         #expect(screen.elements.map(\.role) == [.text])
         #expect(screen.unlocated == [#"button "Share""#])
-        #expect(screen.outline().hasSuffix(#"Also on screen, position unknown (tap them by point): button "Share""#))
+        #expect(screen.outline().hasSuffix(#"Also present, position unknown (may be off-screen; point at them if visible): button "Share""#))
+    }
+
+    @Test func omitsUnmatchedStaticContent() {
+        let screen = Screen(screenshot: .blank, merging: [AccessibilityNode(role: "Static Text", label: "Privacy & Security")], onto: [])
+        #expect(screen.unlocated.isEmpty)
     }
 
     @Test(arguments: [

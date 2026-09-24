@@ -15,7 +15,8 @@ extension Screen {
     ///
     /// Each labeled node takes the frame of the recognized text that reads the same,
     /// preferring an exact match over containment. Text no node claims stays as plain text.
-    /// Labeled nodes with no matching text, typically icon-only controls, are listed as unlocated.
+    /// Labeled controls with no matching text, typically icon-only buttons, are listed as unlocated.
+    /// Unmatched static content is dropped: the hierarchy includes off-screen rows, which OCR never sees.
     init(screenshot: Screenshot, merging nodes: [AccessibilityNode], onto recognized: [Element]) {
         var unclaimed = recognized
         var merged: [Element] = []
@@ -26,8 +27,9 @@ extension Screen {
             let index = unclaimed.firstIndex { $0.label.normalizedForMatching == label }
                 ?? unclaimed.firstIndex { $0.label.normalizedForMatching.overlaps(label) }
             guard let index else {
-                if let label = node.label {
-                    unlocated.append("\(Element.Role(accessibilityRole: node.role ?? "").rawValue) \"\(label)\"")
+                let role = Element.Role(accessibilityRole: node.role ?? "")
+                if let label = node.label, role.isActionable {
+                    unlocated.append("\(role.rawValue) \"\(label)\"")
                 }
                 continue
             }
@@ -53,6 +55,14 @@ extension Screen {
 }
 
 extension Element.Role {
+    /// Whether a model would act on an element of this role rather than just read it.
+    var isActionable: Bool {
+        switch self {
+        case .button, .link, .textField, .toggle, .slider, .tab, .cell: true
+        case .text, .image, .header, .keyboardKey, .other: false
+        }
+    }
+
     /// Maps the daemon's human-readable role names, such as "Search Field" or "Static Text".
     init(accessibilityRole role: String) {
         let role = role.lowercased()
