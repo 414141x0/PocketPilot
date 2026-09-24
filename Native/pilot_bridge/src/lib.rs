@@ -19,7 +19,7 @@ use idevice::provider::TcpProvider;
 use idevice::rsd::RsdHandshake;
 use idevice::tcp::handle::{AdapterHandle, UdpSocketHandle};
 use idevice::{IdeviceService, ReadWrite, RsdService};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 const CLIENT_SUPPORTED_FEATURES: u64 = 140;
 const KEY_LEFT_SHIFT: u64 = 0xE1;
@@ -225,12 +225,12 @@ enum Command {
     },
     ScreenSize(SizeCompletion),
     AxSnapshot(BytesCompletion),
-    AxHitTest {
-        x: f64,
-        y: f64,
-        completion: BytesCompletion,
-    },
     Shutdown,
+}
+
+enum AxCommand {
+    Snapshot(BytesCompletion),
+    Shutdown(oneshot::Sender<()>),
 }
 
 struct ConnectedSession {
@@ -239,7 +239,7 @@ struct ConnectedSession {
     keyboard: IndigoHidClient<Box<dyn ReadWrite>>,
     apps: AppServiceClient<Box<dyn ReadWrite>>,
     display: DisplayServiceClient<Box<dyn ReadWrite>>,
-    ax: Result<ax::AxClient, String>,
+    ax_commands: mpsc::UnboundedSender<AxCommand>,
     _adapter: AdapterHandle,
     _handshake: RsdHandshake,
     screen_size: Option<(u32, u32)>,
@@ -296,6 +296,8 @@ impl ConnectedSession {
             .await
             .map_err(|error| BridgeError::service("HID service unavailable", error))?;
         let ax = ax::AxClient::connect(&mut adapter, &handshake).await;
+        let (ax_commands, ax_command_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(run_ax_session(ax, ax_command_receiver));
 
         Ok(Self {
             screenshot,
@@ -303,7 +305,7 @@ impl ConnectedSession {
             keyboard,
             apps,
             display,
-            ax,
+            ax_commands,
             _adapter: adapter,
             _handshake: handshake,
             screen_size: None,
@@ -412,7 +414,41 @@ impl ConnectedSession {
             }
             Command::ScreenSize(completion) => completion.finish(self.size().await),
             Command::AxSnapshot(completion) => {
-                let result = match &mut self.ax {
+                if let Err(error) = self.ax_commands.send(AxCommand::Snapshot(completion)) {
+                    let AxCommand::Snapshot(completion) = error.0 else {
+                        unreachable!("the failed command was an AX snapshot");
+                    };
+                    completion.finish(Err(BridgeError::new(
+                        PP_Error::SessionClosed,
+                        "accessibility task is closed",
+                    )));
+                }
+            }
+            Command::Shutdown => {
+                let (completion, completed) = oneshot::channel();
+                if self
+                    .ax_commands
+                    .send(AxCommand::Shutdown(completion))
+                    .is_ok()
+                {
+                    let _ = completed.await;
+                }
+                let _ = self.display.stop_media_stream().await;
+                return false;
+            }
+        }
+        true
+    }
+}
+
+async fn run_ax_session(
+    mut ax: Result<ax::AxClient, String>,
+    mut commands: mpsc::UnboundedReceiver<AxCommand>,
+) {
+    while let Some(command) = commands.recv().await {
+        match command {
+            AxCommand::Snapshot(completion) => {
+                let result = match &mut ax {
                     Ok(ax) => ax
                         .snapshot()
                         .await
@@ -424,25 +460,11 @@ impl ConnectedSession {
                 };
                 completion.finish(result);
             }
-            Command::AxHitTest { x, y, completion } => {
-                let result = match &mut self.ax {
-                    Ok(ax) => ax
-                        .hit_test(x, y)
-                        .await
-                        .map_err(|error| BridgeError::new(PP_Error::Service, error)),
-                    Err(error) => Err(BridgeError::new(
-                        PP_Error::Service,
-                        format!("accessibility service unavailable: {error}"),
-                    )),
-                };
-                completion.finish(result);
-            }
-            Command::Shutdown => {
-                let _ = self.display.stop_media_stream().await;
-                return false;
+            AxCommand::Shutdown(completion) => {
+                let _ = completion.send(());
+                break;
             }
         }
-        true
     }
 }
 
@@ -483,9 +505,9 @@ fn finish_unavailable(command: Command, detail: &str) {
         )
     };
     match command {
-        Command::Screenshot(completion)
-        | Command::AxSnapshot(completion)
-        | Command::AxHitTest { completion, .. } => completion.finish(Err(error())),
+        Command::Screenshot(completion) | Command::AxSnapshot(completion) => {
+            completion.finish(Err(error()))
+        }
         Command::ScreenSize(completion) => completion.finish(Err(error())),
         Command::Tap { completion, .. }
         | Command::LongPress { completion, .. }
@@ -1146,7 +1168,8 @@ pub unsafe extern "C" fn pp_screen_size(
 ///
 /// The top-level JSON value is an array of nodes. Each node includes `id`, `token_hex`, `role`,
 /// `label`, `value`, `traits`, `children`, and `ignored`. Traversal is capped at depth 12 and 300
-/// nodes. Geometry is intentionally supplied separately by OCR and `pp_ax_hit_test`.
+/// nodes. Geometry is intentionally supplied separately by OCR. Snapshot collection runs on an
+/// independent task, so it does not block HID input or app commands on the primary session queue.
 ///
 /// # Safety
 ///
@@ -1160,32 +1183,6 @@ pub unsafe extern "C" fn pp_ax_snapshot(
     send_command(
         session,
         Command::AxSnapshot(bytes_completion(callback, context)),
-    );
-}
-
-/// Returns the uppercase hexadecimal accessibility token at a normalized display coordinate.
-///
-/// Coordinates use portrait display space and must each be finite and in the inclusive range
-/// 0...1. The callback bytes contain UTF-8 text and are valid only for the callback duration.
-///
-/// # Safety
-///
-/// `session` must remain live until this call returns. Callback state must outlive the callback.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn pp_ax_hit_test(
-    session: *mut PP_Session,
-    x: f64,
-    y: f64,
-    callback: PP_BytesCallback,
-    context: *mut c_void,
-) {
-    send_command(
-        session,
-        Command::AxHitTest {
-            x,
-            y,
-            completion: bytes_completion(callback, context),
-        },
     );
 }
 
