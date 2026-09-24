@@ -50,7 +50,7 @@ final class BackgroundKeeper: NSObject {
             Self.log.error("start with no source layer; PiP unavailable")
             return
         }
-        render(step: 0, action: "", thought: "")
+        render(step: 0, thought: "", action: "")
         let controller = AVPictureInPictureController(
             contentSource: .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
         )
@@ -61,13 +61,13 @@ final class BackgroundKeeper: NSObject {
 
     /// Enqueues one status card, unless nothing changed or the last frame is
     /// too recent. Called from the chained update funnel.
-    func render(step: Int, action: String, thought: String) {
+    func render(step: Int, thought: String, action: String) {
         guard running else { return }
         let signature = "\(step)\n\(action)\n\(thought)"
         guard signature != lastSignature else { return }
         let now = Date()
         guard now.timeIntervalSince(lastFrame) >= Self.minFrameInterval else { return }
-        guard let sample = Self.sampleBuffer(step: step, action: action, thought: thought) else { return }
+        guard let sample = Self.sampleBuffer(step: step, thought: thought, action: action) else { return }
         lastSignature = signature
         lastFrame = now
         displayLayer?.sampleBufferRenderer.enqueue(sample)
@@ -89,8 +89,8 @@ final class BackgroundKeeper: NSObject {
 
     // MARK: - Card rendering
 
-    private static func sampleBuffer(step: Int, action: String, thought: String) -> CMSampleBuffer? {
-        let image = cardImage(step: step, action: action, thought: thought)
+    private static func sampleBuffer(step: Int, thought: String, action: String) -> CMSampleBuffer? {
+        let image = cardImage(step: step, thought: thought, action: action)
         let width = Int(cardSize.width)
         let height = Int(cardSize.height)
         var pixels: CVPixelBuffer?
@@ -131,7 +131,7 @@ final class BackgroundKeeper: NSObject {
         return sample
     }
 
-    private static func cardImage(step: Int, action: String, thought: String) -> UIImage {
+    private static func cardImage(step: Int, thought: String, action: String) -> UIImage {
         UIGraphicsImageRenderer(size: cardSize).image { _ in
             UIColor(white: 0.08, alpha: 1).setFill()
             UIRectFill(CGRect(origin: .zero, size: cardSize))
