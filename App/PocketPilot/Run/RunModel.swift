@@ -4,6 +4,7 @@ import DeviceLink
 import Foundation
 import Observation
 import OSLog
+import RunActivity
 
 /// Owns one agent run at a time and publishes its progress to the UI.
 @Observable
@@ -41,6 +42,10 @@ final class RunModel {
     private(set) var latestScreenshot: CGImage?
     private var task: Task<Void, Never>?
     private let connection = Connection()
+    private let runActivity = RunActivity()
+    private var currentStep = 0
+    private var lastThought = ""
+    private var lastAction = ""
 
     var isRunning: Bool { task != nil }
     var connectionState: Connection.State { connection.state }
@@ -50,22 +55,30 @@ final class RunModel {
         guard !isRunning else { return }
         entries = []
         latestScreenshot = nil
+        currentStep = 0
+        lastThought = ""
+        lastAction = ""
         phase = .connecting
+        Task { await runActivity.start(goal: goal) }
         task = Task {
             defer { task = nil }
             do {
                 let phone = try await connection.phone(pairing: pairing)
                 let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
                 phase = .finished(outcome)
+                await runActivity.end(conclusion: phase.conclusion ?? "")
             } catch where Task.isCancelled {
                 phase = .idle
+                await runActivity.end(conclusion: String(localized: "Run stopped."))
             } catch let error as DeviceError where !error.isRecoverable {
                 Self.log.error("Run failed: \(error.description, privacy: .public)")
                 connection.reset()
                 phase = .failed(error.description)
+                await runActivity.end(conclusion: error.description)
             } catch {
                 Self.log.error("Run failed: \(String(describing: error), privacy: .public)")
                 phase = .failed(String(describing: error))
+                await runActivity.end(conclusion: String(describing: error))
             }
         }
     }
@@ -80,11 +93,19 @@ final class RunModel {
         switch event {
         case .observed(let screen, let step):
             phase = .running(step: step)
+            currentStep = step
             latestScreenshot = screen.screenshot.image
+            Task { await runActivity.update(step: step, thought: lastThought, action: lastAction) }
         case .decided(let decision):
-            entries.append(Entry(id: entries.count, thought: decision.thought, action: String(describing: decision.action)))
+            let action = String(describing: decision.action)
+            entries.append(Entry(id: entries.count, thought: decision.thought, action: action))
+            lastThought = decision.thought
+            lastAction = action
+            Task { await runActivity.update(step: currentStep, thought: lastThought, action: lastAction) }
         case .failed(_, let reason):
             if let last = entries.indices.last { entries[last].failure = reason }
         }
     }
 }
+
+extension RunModel: RunControl {}

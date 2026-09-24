@@ -8,5 +8,7 @@
 	<array>
 		<string>screen-capture</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

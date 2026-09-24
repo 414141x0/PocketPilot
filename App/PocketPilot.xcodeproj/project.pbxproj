@@ -11,14 +11,43 @@
 		A10000000000000000000102 /* DeviceLink in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000202 /* DeviceLink */; };
 		A10000000000000000000103 /* OpenAIPilot in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000203 /* OpenAIPilot */; };
 		A10000000000000000000104 /* SystemPilot in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000204 /* SystemPilot */; };
+		A10000000000000000000105 /* RunActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000205 /* RunActivity */; };
+		A10000000000000000000106 /* RunActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000206 /* RunActivity */; };
+		A10000000000000000000107 /* PocketPilotActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000302 /* PocketPilotActivity.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000E01 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000801 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000704;
+			remoteInfo = PocketPilotActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A10000000000000000000C01 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000000000000000000107 /* PocketPilotActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000301 /* PocketPilot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PocketPilot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000302 /* PocketPilotActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PocketPilotActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000401 /* PocketPilot */ = {isa = PBXFileSystemSynchronizedRootGroup; path = PocketPilot; sourceTree = "<group>"; };
+		A10000000000000000000402 /* PocketPilotActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; path = PocketPilotActivity; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -30,6 +59,15 @@
 				A10000000000000000000102 /* DeviceLink in Frameworks */,
 				A10000000000000000000103 /* OpenAIPilot in Frameworks */,
 				A10000000000000000000104 /* SystemPilot in Frameworks */,
+				A10000000000000000000105 /* RunActivity in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000502 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000106 /* RunActivity in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -40,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000401 /* PocketPilot */,
+				A10000000000000000000402 /* PocketPilotActivity */,
 				A10000000000000000000602 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000301 /* PocketPilot.app */,
+				A10000000000000000000302 /* PocketPilotActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -62,10 +102,12 @@
 				A10000000000000000000702 /* Sources */,
 				A10000000000000000000501 /* Frameworks */,
 				A10000000000000000000703 /* Resources */,
+				A10000000000000000000C01 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A10000000000000000000D01 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A10000000000000000000401 /* PocketPilot */,
@@ -76,10 +118,34 @@
 				A10000000000000000000202 /* DeviceLink */,
 				A10000000000000000000203 /* OpenAIPilot */,
 				A10000000000000000000204 /* SystemPilot */,
+				A10000000000000000000205 /* RunActivity */,
 			);
 			productName = PocketPilot;
 			productReference = A10000000000000000000301 /* PocketPilot.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000704 /* PocketPilotActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000903 /* Build configuration list for PBXNativeTarget "PocketPilotActivity" */;
+			buildPhases = (
+				A10000000000000000000705 /* Sources */,
+				A10000000000000000000502 /* Frameworks */,
+				A10000000000000000000706 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000402 /* PocketPilotActivity */,
+			);
+			name = PocketPilotActivity;
+			packageProductDependencies = (
+				A10000000000000000000206 /* RunActivity */,
+			);
+			productName = PocketPilotActivity;
+			productReference = A10000000000000000000302 /* PocketPilotActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -92,6 +158,9 @@
 				LastUpgradeCheck = 2720;
 				TargetAttributes = {
 					A10000000000000000000701 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+					A10000000000000000000704 = {
 						CreatedOnToolsVersion = 27.2;
 					};
 				};
@@ -114,12 +183,20 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000701 /* PocketPilot */,
+				A10000000000000000000704 /* PocketPilotActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A10000000000000000000703 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000706 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -136,7 +213,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000705 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000D01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000704 /* PocketPilotActivity */;
+			targetProxy = A10000000000000000000E01 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A10000000000000000000B01 /* Debug */ = {
@@ -240,6 +332,42 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000B05 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = PocketPilotActivity;
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = com.apple.widgetkit-extension;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.typealias.PocketPilot.Activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A10000000000000000000B06 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = PocketPilotActivity;
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = com.apple.widgetkit-extension;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.typealias.PocketPilot.Activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -257,6 +385,15 @@
 			buildConfigurations = (
 				A10000000000000000000B03 /* Debug */,
 				A10000000000000000000B04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000903 /* Build configuration list for PBXNativeTarget "PocketPilotActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000B05 /* Debug */,
+				A10000000000000000000B06 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -286,6 +423,14 @@
 		A10000000000000000000204 /* SystemPilot */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SystemPilot;
+		};
+		A10000000000000000000205 /* RunActivity */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RunActivity;
+		};
+		A10000000000000000000206 /* RunActivity */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RunActivity;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
