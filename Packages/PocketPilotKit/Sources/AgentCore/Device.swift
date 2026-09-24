@@ -13,6 +13,8 @@ extension Device {
 public enum DeviceError: Error, Sendable, Hashable {
     /// LocalDevVPN is not connected, so the device cannot reach itself.
     case tunnelUnavailable
+    /// iOS only runs its developer-service listeners while Wi-Fi is on, even though traffic stays on the device.
+    case wifiOff
     /// Establishing the link failed at a specific stage; `detail` names it.
     case connectionFailed(String)
     /// The pairing file is missing, malformed, or no longer trusted by the device.

@@ -13,7 +13,8 @@ public struct Phone: Device {
     /// Pass a running ``DisplayCapture`` for fast, settle-aware screenshots; without one,
     /// the phone falls back to CoreDevice screenshots.
     public static func connect(pairing: PairingFile, display: DisplayCapture? = nil) async throws(DeviceError) -> Phone {
-        Phone(session: try await BridgeSession.open(pairing), display: display)
+        guard await WiFi.isUp() else { throw .wifiOff }
+        return Phone(session: try await BridgeSession.open(pairing), display: display)
     }
 
     /// Captures the settled screen, then reads accessibility and on-screen text concurrently.
