@@ -47,7 +47,7 @@ extension Screen {
 }
 
 extension Rect {
-    static let fullScreen = Rect(x: 0, y: 0, width: 1, height: 1)
+    public static let fullScreen = Rect(x: 0, y: 0, width: 1, height: 1)
 }
 
 extension Gesture {

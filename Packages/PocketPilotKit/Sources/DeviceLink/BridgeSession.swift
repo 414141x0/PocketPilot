@@ -57,6 +57,16 @@ final class BridgeSession: Sendable {
         try await complete { pp_launch_app(handle, bundleID, $0, $1) }
     }
 
+    /// The accessibility hierarchy, flattened, without geometry.
+    func accessibilityNodes() async throws(DeviceError) -> [AccessibilityNode] {
+        let json = try await bytes { pp_ax_snapshot(handle, $0, $1) }
+        do {
+            return try JSONDecoder().decode([AccessibilityNode].self, from: json)
+        } catch {
+            throw .service("Unreadable accessibility snapshot: \(error)")
+        }
+    }
+
     /// A PNG of the display, used when ScreenCaptureKit is unavailable.
     func screenshot() async throws(DeviceError) -> Data {
         try await bytes { pp_screenshot(handle, $0, $1) }

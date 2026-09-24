@@ -1,5 +1,0 @@
-module PilotBridge {
-  header "pilot_bridge.h"
-  export *
-}
-

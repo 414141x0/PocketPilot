@@ -16,9 +16,15 @@ public struct Phone: Device {
         Phone(session: try await BridgeSession.open(pairing), display: display)
     }
 
+    /// Captures the settled screen, then reads accessibility and on-screen text concurrently.
+    ///
+    /// Accessibility supplies meaning but no geometry; text recognition supplies geometry.
+    /// Without accessibility, recognized text alone is still a usable screen.
     public func observe() async throws(DeviceError) -> Screen {
         let screenshot = try await screenshot()
-        return Screen(screenshot: screenshot, elements: await screenshot.recognizedText())
+        async let nodes = try? session.accessibilityNodes()
+        let text = await screenshot.recognizedText()
+        return Screen(screenshot: screenshot, elements: .merging(await nodes ?? [], onto: text))
     }
 
     public func perform(_ gesture: Gesture) async throws(DeviceError) {
