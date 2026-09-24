@@ -1,14 +1,14 @@
 extension Action {
     /// The concrete gesture for this action on `screen`, or `nil`
-    /// when the action needs no input (waiting, finishing).
-    public func gesture(on screen: Screen) throws(ResolutionError) -> Gesture? {
+    /// when the action needs no input (waiting, finishing). `apps` resolves app names.
+    public func gesture(on screen: Screen, apps: [InstalledApp] = []) throws(ResolutionError) -> Gesture? {
         switch self {
         case .tap(let target): .tap(try screen.point(for: target))
         case .longPress(let target): .longPress(try screen.point(for: target))
         case .scroll(let direction, let target): .swipe(direction, in: try screen.frame(for: target))
         case .type(let text): .type(text)
         case .press(let button): .press(button)
-        case .open(let bundleID): .launch(bundleID: bundleID)
+        case .open(let app): .launch(bundleID: try apps.bundleID(for: app))
         case .wait, .done, .giveUp: nil
         }
     }
@@ -16,10 +16,14 @@ extension Action {
 
 public enum ResolutionError: Error, Sendable, Hashable, CustomStringConvertible {
     case unknownElement(Element.ID)
+    case unknownApp(String, similar: [String])
 
     public var description: String {
         switch self {
         case .unknownElement(let id): "No element with id \(id) is on screen."
+        case .unknownApp(let name, []): "No installed app is named \"\(name)\"."
+        case .unknownApp(let name, let similar):
+            "No installed app is named \"\(name)\". Similar: \(similar.joined(separator: ", "))."
         }
     }
 }

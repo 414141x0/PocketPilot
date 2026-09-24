@@ -27,6 +27,10 @@ public struct Phone: Device {
         return Screen(screenshot: screenshot, merging: await nodes ?? [], onto: text)
     }
 
+    public func installedApps() async throws(DeviceError) -> [InstalledApp] {
+        try await session.installedApps()
+    }
+
     public func perform(_ gesture: Gesture) async throws(DeviceError) {
         switch gesture {
         case .tap(let point): try await session.tap(point)

@@ -8,7 +8,8 @@ public enum Action: Sendable, Hashable, Codable {
     case scroll(Direction, in: Target? = nil)
     case type(String)
     case press(HardwareButton)
-    case open(bundleID: String)
+    /// Opens an app by display name ("Settings") or bundle identifier.
+    case open(app: String)
     case wait(seconds: Double)
     /// The goal is achieved; `summary` is reported back to the user.
     case done(summary: String)

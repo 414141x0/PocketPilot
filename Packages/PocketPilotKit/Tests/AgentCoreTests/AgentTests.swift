@@ -228,3 +228,30 @@ private extension Screenshot {
         return bytes
     }
 }
+
+@Suite struct AppResolutionTests {
+    let apps = [
+        InstalledApp(name: "Settings", bundleID: "com.apple.Preferences"),
+        InstalledApp(name: "Safari", bundleID: "com.apple.mobilesafari"),
+        InstalledApp(name: "Shortcuts", bundleID: "com.apple.shortcuts"),
+    ]
+
+    @Test(arguments: [
+        ("Settings", "com.apple.Preferences"),
+        ("safari", "com.apple.mobilesafari"),
+        ("com.apple.shortcuts", "com.apple.shortcuts"),
+        ("Short", "com.apple.shortcuts"),
+    ])
+    func resolvesNamesAndIdentifiers(_ query: String, _ bundleID: String) throws {
+        #expect(try apps.bundleID(for: query) == bundleID)
+    }
+
+    @Test func ambiguousOrUnknownNamesFailWithSuggestions() {
+        #expect(throws: ResolutionError.unknownApp("S", similar: ["Settings", "Safari", "Shortcuts"])) { try apps.bundleID(for: "S") }
+        #expect(throws: ResolutionError.unknownApp("Setting App", similar: ["Settings"])) { try apps.bundleID(for: "Setting App") }
+    }
+
+    @Test func passesThroughWithoutAList() throws {
+        #expect(try [InstalledApp]().bundleID(for: "com.example.app") == "com.example.app")
+    }
+}

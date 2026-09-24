@@ -42,6 +42,7 @@ public struct Agent: Sendable {
     public func run(_ goal: String, onEvent: (Event) -> Void = { _ in }) async throws -> Outcome {
         var history: [Turn] = []
         var previous: Screen?
+        let apps = (try? await device.installedApps()) ?? []
         while history.count < maxSteps {
             try Task.checkCancellation()
 
@@ -69,7 +70,7 @@ public struct Agent: Sendable {
 
             var turn = Turn(decision: decision, failure: history.repeatedFailure(of: decision.action))
             if turn.failure == nil {
-                turn.failure = try await perform(decision.action, on: step.screen)
+                turn.failure = try await perform(decision.action, on: step.screen, apps: apps)
             }
             if let failure = turn.failure {
                 onEvent(.failed(decision.action, reason: failure))
@@ -82,9 +83,9 @@ public struct Agent: Sendable {
 
     /// Performs `action`, returning a description of any failure the pilot can recover from.
     /// Failures that make further progress impossible are thrown.
-    private func perform(_ action: Action, on screen: Screen) async throws -> String? {
+    private func perform(_ action: Action, on screen: Screen, apps: [InstalledApp]) async throws -> String? {
         do {
-            guard let gesture = try action.gesture(on: screen) else { return nil }
+            guard let gesture = try action.gesture(on: screen, apps: apps) else { return nil }
             try await device.perform(gesture)
             return nil
         } catch let error as ResolutionError {

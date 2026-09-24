@@ -54,9 +54,9 @@ import Foundation
     }
 
     @Test func mapsOpenAppAction() {
-        let reply = Reply(thought: "Open Safari", action: .open(bundleID: "com.apple.mobilesafari"))
+        let reply = Reply(thought: "Open Safari", action: .open(app: "Safari"))
         let decision = SystemPilot.mapDecision(reply)
-        #expect(decision.action == .open(bundleID: "com.apple.mobilesafari"))
+        #expect(decision.action == .open(app: "Safari"))
     }
 
     @Test func mapsWaitAction() {

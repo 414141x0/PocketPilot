@@ -2,6 +2,12 @@
 public protocol Device: Sendable {
     func observe() async throws(DeviceError) -> Screen
     func perform(_ gesture: Gesture) async throws(DeviceError)
+    /// Apps the agent may open. Devices that can't list apps open by bundle identifier only.
+    func installedApps() async throws(DeviceError) -> [InstalledApp]
+}
+
+extension Device {
+    public func installedApps() async throws(DeviceError) -> [InstalledApp] { [] }
 }
 
 public enum DeviceError: Error, Sendable, Hashable {

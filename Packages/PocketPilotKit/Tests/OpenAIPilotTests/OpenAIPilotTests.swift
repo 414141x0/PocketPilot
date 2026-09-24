@@ -111,7 +111,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         ("{\"kind\":\"type\",\"text\":\"hello\"}", .type("hello")),
         ("{\"kind\":\"press\",\"button\":\"lock\"}", .press(.lock)),
         ("{\"kind\":\"press\",\"button\":\"home\"}", .press(.home)),
-        ("{\"kind\":\"open\",\"bundle_id\":\"com.apple.Preferences\"}", .open(bundleID: "com.apple.Preferences")),
+        ("{\"kind\":\"open\",\"app\":\"Settings\"}", .open(app: "Settings")),
         ("{\"kind\":\"wait\",\"seconds\":1.5}", .wait(seconds: 1.5)),
         ("{\"kind\":\"done\",\"summary\":\"Finished\"}", .done(summary: "Finished")),
         ("{\"kind\":\"give_up\",\"reason\":\"Stuck\"}", .giveUp(reason: "Stuck"))

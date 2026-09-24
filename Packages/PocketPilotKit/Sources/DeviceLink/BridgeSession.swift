@@ -67,6 +67,15 @@ final class BridgeSession: Sendable {
         }
     }
 
+    func installedApps() async throws(DeviceError) -> [InstalledApp] {
+        let json = try await bytes { pp_list_apps(handle, $0, $1) }
+        do {
+            return try JSONDecoder().decode([InstalledApp].self, from: json)
+        } catch {
+            throw .service("Unreadable app list: \(error)")
+        }
+    }
+
     /// A PNG of the display, used when ScreenCaptureKit is unavailable.
     func screenshot() async throws(DeviceError) -> Data {
         try await bytes { pp_screenshot(handle, $0, $1) }

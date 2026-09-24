@@ -66,7 +66,7 @@ extension Pilot {
         button, tap its center as a grid point read from the screenshot.
         - To enter text, tap the field first, then type. Typing does not submit.
         - Scroll direction names where the content moves: "down" reveals what is below.
-        - Open apps by bundle identifier when you know it; otherwise go home and use the Home Screen.
+        - Open apps by their name, as shown on the Home Screen: open "Settings".
         - If an action failed, read the reason and try something different rather than repeating it.
         - Finish with done and a one-sentence summary once the goal is met, or giveUp with the reason \
         when it cannot be met. Never ask the user questions.
@@ -117,7 +117,7 @@ extension Action: CustomStringConvertible {
         case .scroll(let direction, let target?): "scroll \(direction) in \(target)"
         case .type(let text): "type \"\(text.truncated(to: 80))\""
         case .press(let button): "press \(button)"
-        case .open(let bundleID): "open \(bundleID)"
+        case .open(let app): "open \(app)"
         case .wait(let seconds): "wait \(seconds == seconds.rounded() ? String(Int(seconds)) : String(seconds))s"
         case .done(let summary): "done: \(summary)"
         case .giveUp(let reason): "give up: \(reason)"
