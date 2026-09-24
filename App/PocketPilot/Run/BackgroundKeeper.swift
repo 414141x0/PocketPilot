@@ -17,8 +17,6 @@ import UIKit
 final class BackgroundKeeper: NSObject {
     private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
     private static let cardSize = CGSize(width: 320, height: 180)
-    /// Slowest frame gap: frames only on change, at most 2 per second.
-    private static let minFrameInterval: TimeInterval = 0.5
 
     /// Called when the user taps PiP's pause button. RunModel stops the run.
     var onPause: (() -> Void)?
@@ -27,7 +25,6 @@ final class BackgroundKeeper: NSObject {
     private var pip: AVPictureInPictureController?
     private var running = false
     private var lastSignature: String?
-    private var lastFrame = Date.distantPast
 
     /// Attaches the on-screen source layer. Called once from KeeperLayerHost.
     /// PiP refuses hidden or fully transparent layers, so the host stays visible.
@@ -41,7 +38,8 @@ final class BackgroundKeeper: NSObject {
         guard !running else { return }
         running = true
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            // Mixing keeps the user's own audio playing; a run may be asked to play music.
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: .mixWithOthers)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             Self.log.error("audio session: \(String(describing: error), privacy: .public)")
@@ -56,20 +54,26 @@ final class BackgroundKeeper: NSObject {
         )
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         pip = controller
-        Self.log.info("pip possible=\(controller.isPictureInPicturePossible)")
+        // Start explicitly once possible (the device-proven path); auto-start covers a later background.
+        Task {
+            for _ in 0..<20 where !controller.isPictureInPicturePossible {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            Self.log.info("pip possible=\(controller.isPictureInPicturePossible)")
+            guard running, pip === controller else { return }
+            controller.startPictureInPicture()
+        }
     }
 
-    /// Enqueues one status card, unless nothing changed or the last frame is
-    /// too recent. Called from the chained update funnel.
+    /// Enqueues a status card when its content changed. Updates arrive a few per step,
+    /// already ordered by RunModel, so every change is drawn.
     func render(step: Int, thought: String, action: String) {
         guard running else { return }
         let signature = "\(step)\n\(action)\n\(thought)"
-        guard signature != lastSignature else { return }
-        let now = Date()
-        guard now.timeIntervalSince(lastFrame) >= Self.minFrameInterval else { return }
-        guard let sample = Self.sampleBuffer(step: step, thought: thought, action: action) else { return }
+        guard signature != lastSignature,
+              let sample = Self.sampleBuffer(step: step, thought: thought, action: action)
+        else { return }
         lastSignature = signature
-        lastFrame = now
         displayLayer?.sampleBufferRenderer.enqueue(sample)
     }
 
@@ -140,7 +144,7 @@ final class BackgroundKeeper: NSObject {
                 style.lineBreakMode = .byTruncatingTail
                 return style
             }()
-            ("Step \(step)" as NSString).draw(
+            (String(localized: "Step \(step)") as NSString).draw(
                 in: CGRect(x: 16, y: 10, width: 288, height: 36),
                 withAttributes: [.font: UIFont.boldSystemFont(ofSize: 26), .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
             )
@@ -152,7 +156,7 @@ final class BackgroundKeeper: NSObject {
                 in: CGRect(x: 16, y: 78, width: 288, height: 44),
                 withAttributes: [.font: UIFont.systemFont(ofSize: 15), .foregroundColor: UIColor.gray, .paragraphStyle: paragraph]
             )
-            ("⏸ to stop" as NSString).draw(
+            (String(localized: "⏸ to stop") as NSString).draw(
                 in: CGRect(x: 16, y: 148, width: 288, height: 22),
                 withAttributes: [.font: UIFont.systemFont(ofSize: 14), .foregroundColor: UIColor.darkGray, .paragraphStyle: paragraph]
             )

@@ -15,7 +15,7 @@ struct KeeperLayerHost: UIViewRepresentable {
     func makeUIView(context: Context) -> LayerView {
         let view = LayerView()
         let layer = view.layer as! AVSampleBufferDisplayLayer
-        Task { await keeper.attach(layer: layer) }
+        keeper.attach(layer: layer)
         return view
     }
 
