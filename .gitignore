@@ -7,3 +7,4 @@ DerivedData/
 Native/target/
 *.xcframework/
 Build/
+build/

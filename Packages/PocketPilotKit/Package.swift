@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "DeviceLink", targets: ["DeviceLink"]),
         .library(name: "OpenAIPilot", targets: ["OpenAIPilot"]),
         .library(name: "SystemPilot", targets: ["SystemPilot"]),
+        .library(name: "RunActivity", targets: ["RunActivity"]),
     ],
     dependencies: [
         .package(url: "https://github.com/MacPaw/OpenAI.git", from: "0.5.1"),
@@ -38,9 +39,11 @@ let package = Package(
             dependencies: ["AgentCore"],
             swiftSettings: settings
         ),
+        .target(name: "RunActivity", swiftSettings: settings),
         .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"], swiftSettings: settings),
         .testTarget(name: "DeviceLinkTests", dependencies: ["DeviceLink"], swiftSettings: settings),
         .testTarget(name: "OpenAIPilotTests", dependencies: ["OpenAIPilot"], swiftSettings: settings),
         .testTarget(name: "SystemPilotTests", dependencies: ["SystemPilot"], swiftSettings: settings),
+        .testTarget(name: "RunActivityTests", dependencies: ["RunActivity"], swiftSettings: settings),
     ]
 )
