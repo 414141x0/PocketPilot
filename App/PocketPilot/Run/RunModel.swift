@@ -43,11 +43,17 @@ final class RunModel {
     private var task: Task<Void, Never>?
     private let connection = Connection()
     private let runActivity = LiveActivityController()
+    /// PiP keep-alive. Internal so RunView can host its source layer.
+    let keeper = BackgroundKeeper()
     /// The latest Live Activity update; each new one waits for it so updates land in order.
     private var activityUpdate: Task<Void, Never>?
     private var currentStep = 0
     private var lastThought = ""
     private var lastAction = ""
+
+    init() {
+        keeper.onPause = { [weak self] in self?.stop() }
+    }
 
     var isRunning: Bool { task != nil }
     var connectionState: Connection.State { connection.state }
@@ -64,6 +70,7 @@ final class RunModel {
         task = Task {
             defer { task = nil }
             await runActivity.start(goal: goal)
+            keeper.start()
             do {
                 let phone = try await connection.phone(pairing: pairing)
                 let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
@@ -119,6 +126,7 @@ extension RunModel {
         activityUpdate = Task {
             await previous?.value
             await runActivity.update(step: step, thought: thought, action: action)
+            await MainActor.run { keeper.render(step: step, thought: thought, action: action) }
         }
     }
 
@@ -126,5 +134,6 @@ extension RunModel {
     private func endActivity(_ conclusion: String) async {
         await activityUpdate?.value
         await runActivity.end(conclusion: conclusion)
+        keeper.stop()
     }
 }
