@@ -61,7 +61,7 @@ final class GPUProbe: NSObject {
         _ = receiver.enqueueImmediately(ready)
     }
 
-    private static func makeSample() -> sending CMSampleBuffer? {
+    private nonisolated static func makeSample() -> sending CMSampleBuffer? {
         var pixels: CVPixelBuffer?
         CVPixelBufferCreate(nil, 64, 64, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixels)
         guard let pixels else { return nil }
