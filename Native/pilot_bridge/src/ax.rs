@@ -7,7 +7,7 @@ use idevice::dvt::remote_server::RemoteServerClient;
 use idevice::rsd::RsdHandshake;
 use idevice::tcp::handle::AdapterHandle;
 use idevice::{Idevice, ReadWrite};
-use plist::{Dictionary, Uid, Value};
+use plist::{Dictionary, Value};
 use serde::Serialize;
 
 const SERVICE_NAME: &str = "com.apple.accessibility.axAuditDaemon.remoteserver.shim.remote";
@@ -238,31 +238,6 @@ impl AxClient {
             .map_err(|error| format!("AX JSON serialization failed: {error}"))
     }
 
-    pub(crate) async fn hit_test(&mut self, x: f64, y: f64) -> Result<Vec<u8>, String> {
-        validate_unit_coordinate(x, "x")?;
-        validate_unit_coordinate(y, "y")?;
-        self.invoke(
-            "deviceSetAppMonitoringEnabled:",
-            vec![AuxValue::archived_value(true)],
-        )
-        .await?;
-        self.invoke(
-            "deviceInspectorEnable:",
-            vec![AuxValue::archived_value(true)],
-        )
-        .await?;
-        let point = archived_transport_point(x, y)?;
-        let element = self
-            .request(
-                "deviceFetchElementAtNormalizedDeviceCoordinate:",
-                vec![AuxValue::primitive_buffer(point)],
-            )
-            .await?;
-        token_hex(&element).map(String::into_bytes).ok_or_else(|| {
-            format!("AX hit test returned an element without a platform token: {element:?}")
-        })
-    }
-
     async fn invoke(&mut self, selector: &str, arguments: Vec<AuxValue>) -> Result<(), String> {
         self.dtx
             .call_method(0, Some(selector), Some(arguments), false)
@@ -395,49 +370,6 @@ async fn flush_initial_messages(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>
     }
 }
 
-fn archived_transport_point(x: f64, y: f64) -> Result<Vec<u8>, String> {
-    let objects = Value::Array(vec![
-        Value::String("$null".to_string()),
-        Value::Dictionary(Dictionary::from_iter([
-            ("$class".to_string(), Value::Uid(Uid::new(3))),
-            ("NS.pointval".to_string(), Value::Uid(Uid::new(2))),
-            ("NS.special".to_string(), Value::from(1_i64)),
-        ])),
-        Value::String(format!("{{{x:.17}, {y:.17}}}")),
-        Value::Dictionary(Dictionary::from_iter([
-            (
-                "$classes".to_string(),
-                Value::Array(vec![
-                    Value::String("NSValue".to_string()),
-                    Value::String("NSObject".to_string()),
-                ]),
-            ),
-            (
-                "$classname".to_string(),
-                Value::String("NSValue".to_string()),
-            ),
-        ])),
-    ]);
-    let archive = Value::Dictionary(Dictionary::from_iter([
-        (
-            "$archiver".to_string(),
-            Value::String("NSKeyedArchiver".to_string()),
-        ),
-        ("$objects".to_string(), objects),
-        (
-            "$top".to_string(),
-            Value::Dictionary(Dictionary::from_iter([(
-                "root".to_string(),
-                Value::Uid(Uid::new(1)),
-            )])),
-        ),
-        ("$version".to_string(), Value::from(100_000_i64)),
-    ]));
-    let mut bytes = Vec::new();
-    plist::to_writer_binary(&mut bytes, &archive)
-        .map_err(|error| format!("AX point archive encoding failed: {error}"))?;
-    Ok(bytes)
-}
 fn passthrough(value: impl Into<Value>) -> Value {
     Value::Dictionary(Dictionary::from_iter([
         (
@@ -542,16 +474,6 @@ fn node_token_hex(value: &Value) -> Option<String> {
         .map(hex)
 }
 
-fn validate_unit_coordinate(value: f64, name: &str) -> Result<(), String> {
-    if value.is_finite() && (0.0..=1.0).contains(&value) {
-        Ok(())
-    } else {
-        Err(format!(
-            "AX hit-test coordinate {name} must be finite and in 0...1"
-        ))
-    }
-}
-
 fn hex(bytes: &[u8]) -> String {
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -584,35 +506,6 @@ mod tests {
         let mut builder = SnapshotBuilder::default();
         builder.merge_tree(&value, 0);
         assert_eq!(builder.elements.len(), MAX_DEPTH + 1);
-    }
-
-    #[test]
-    fn point_archive_contains_an_nsvalue() {
-        let bytes = archived_transport_point(0.38, 0.93).unwrap();
-        let archive = Value::from_reader(std::io::Cursor::new(bytes)).unwrap();
-        let objects = archive
-            .as_dictionary()
-            .and_then(|dictionary| dictionary.get("$objects"))
-            .and_then(Value::as_array)
-            .unwrap();
-        assert_eq!(
-            objects[2].as_string(),
-            Some("{0.38000000000000000, 0.93000000000000005}")
-        );
-        assert_eq!(
-            objects[3]
-                .as_dictionary()
-                .and_then(|dictionary| dictionary.get("$classname"))
-                .and_then(Value::as_string),
-            Some("NSValue")
-        );
-    }
-
-    #[test]
-    fn rejects_invalid_hit_test_coordinates() {
-        assert!(validate_unit_coordinate(-0.01, "x").is_err());
-        assert!(validate_unit_coordinate(1.01, "x").is_err());
-        assert!(validate_unit_coordinate(f64::NAN, "x").is_err());
     }
 
     fn node(
