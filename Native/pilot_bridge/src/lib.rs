@@ -6,8 +6,9 @@ use std::ptr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use idevice::core_device::{
-    AppServiceClient, ButtonState, CallInfoBlob, DisplayServiceClient, ImageFormat,
+    AppListEntry, AppServiceClient, ButtonState, CallInfoBlob, DisplayServiceClient, ImageFormat,
     IndigoHidClient, ReportBlock, ScreenCaptureServiceClient, SenderReport,
     TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, UniversalHidServiceClient,
     build_liveness, build_screen_audio_offer, build_screen_video_offer,
@@ -168,6 +169,13 @@ struct SizeCompletion {
     context: usize,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct InstalledApp {
+    name: String,
+    bundle_id: String,
+    first_party: bool,
+}
+
 impl SizeCompletion {
     fn finish(self, result: Result<(u32, u32), BridgeError>) {
         let Some(callback) = self.callback else {
@@ -223,6 +231,7 @@ enum Command {
         bundle_id: String,
         completion: Completion,
     },
+    ListApps(BytesCompletion),
     ScreenSize(SizeCompletion),
     AxSnapshot(BytesCompletion),
     Shutdown,
@@ -412,6 +421,21 @@ impl ConnectedSession {
                     .map_err(|error| BridgeError::service("app launch failed", error));
                 completion.finish(result);
             }
+            Command::ListApps(completion) => {
+                // The side channel must be drained before this client can handle another command,
+                // including when one streamed entry fails to decode.
+                let streamed = self
+                    .apps
+                    .stream_apps(false, true, false, false, true)
+                    .collect::<Vec<_>>()
+                    .await;
+                let result = streamed
+                    .into_iter()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| BridgeError::service("app listing failed", error))
+                    .and_then(encode_app_list);
+                completion.finish(result);
+            }
             Command::ScreenSize(completion) => completion.finish(self.size().await),
             Command::AxSnapshot(completion) => {
                 if let Err(error) = self.ax_commands.send(AxCommand::Snapshot(completion)) {
@@ -505,9 +529,9 @@ fn finish_unavailable(command: Command, detail: &str) {
         )
     };
     match command {
-        Command::Screenshot(completion) | Command::AxSnapshot(completion) => {
-            completion.finish(Err(error()))
-        }
+        Command::Screenshot(completion)
+        | Command::ListApps(completion)
+        | Command::AxSnapshot(completion) => completion.finish(Err(error())),
         Command::ScreenSize(completion) => completion.finish(Err(error())),
         Command::Tap { completion, .. }
         | Command::LongPress { completion, .. }
@@ -588,6 +612,29 @@ async fn start_display_gate(
     tokio::spawn(async move { while audio.recv().await.is_ok() {} });
     keep_display_stream_alive(video, rtcp, adapter.host_ip().to_string(), our_ssrc);
     Ok(client)
+}
+
+fn encode_app_list(apps: Vec<AppListEntry>) -> Result<Vec<u8>, BridgeError> {
+    let mut apps: Vec<_> = apps
+        .into_iter()
+        .map(|app| InstalledApp {
+            name: app.name,
+            bundle_id: app.bundle_identifier,
+            first_party: app.is_first_party,
+        })
+        .collect();
+    apps.sort_unstable_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.bundle_id.cmp(&right.bundle_id))
+    });
+    serde_json::to_vec(&apps).map_err(|error| {
+        BridgeError::new(
+            PP_Error::Internal,
+            format!("app list JSON serialization failed: {error}"),
+        )
+    })
 }
 
 #[derive(Default)]
@@ -1147,6 +1194,26 @@ pub unsafe extern "C" fn pp_launch_app(
     );
 }
 
+/// Returns installed user-removable and default apps as a UTF-8 JSON array.
+///
+/// Each entry contains `name`, `bundle_id`, and `first_party`. The array is sorted by display name,
+/// then bundle identifier. Callback bytes are valid only for the callback duration.
+///
+/// # Safety
+///
+/// `session` must remain live until this call returns. Callback state must outlive the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pp_list_apps(
+    session: *mut PP_Session,
+    callback: PP_BytesCallback,
+    context: *mut c_void,
+) {
+    send_command(
+        session,
+        Command::ListApps(bytes_completion(callback, context)),
+    );
+}
+
 /// Returns the primary display size in pixels, capturing one screenshot if the size is uncached.
 ///
 /// # Safety
@@ -1210,6 +1277,35 @@ mod tests {
         assert!(validate_normalized(-0.01, "x").is_err());
         assert!(validate_normalized(1.01, "x").is_err());
         assert!(validate_normalized(f64::NAN, "x").is_err());
+    }
+
+    #[test]
+    fn encodes_sorted_public_app_fields() {
+        let bytes = encode_app_list(vec![
+            app("Weather", "com.apple.weather", true),
+            app("Acme", "com.example.acme", false),
+        ])
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            r#"[{"name":"Acme","bundle_id":"com.example.acme","first_party":false},{"name":"Weather","bundle_id":"com.apple.weather","first_party":true}]"#
+        );
+    }
+
+    fn app(name: &str, bundle_identifier: &str, is_first_party: bool) -> AppListEntry {
+        AppListEntry {
+            is_removable: !is_first_party,
+            name: name.to_string(),
+            is_first_party,
+            path: String::new(),
+            bundle_identifier: bundle_identifier.to_string(),
+            is_developer_app: false,
+            bundle_version: None,
+            is_internal: false,
+            is_hidden: false,
+            is_app_clip: false,
+            version: None,
+        }
     }
 
     #[test]

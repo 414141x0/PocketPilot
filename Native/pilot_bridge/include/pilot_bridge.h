@@ -177,6 +177,18 @@ void pp_launch_app(struct PP_Session *session,
                    void *context);
 
 /**
+ * Returns installed user-removable and default apps as a UTF-8 JSON array.
+ *
+ * Each entry contains `name`, `bundle_id`, and `first_party`. The array is sorted by display name,
+ * then bundle identifier. Callback bytes are valid only for the callback duration.
+ *
+ * # Safety
+ *
+ * `session` must remain live until this call returns. Callback state must outlive the callback.
+ */
+void pp_list_apps(struct PP_Session *session, PP_BytesCallback callback, void *context);
+
+/**
  * Returns the primary display size in pixels, capturing one screenshot if the size is uncached.
  *
  * # Safety

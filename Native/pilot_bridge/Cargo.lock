@@ -486,6 +486,7 @@ dependencies = [
 name = "pilot_bridge"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "idevice",
  "ns-keyed-archive",
  "plist",
