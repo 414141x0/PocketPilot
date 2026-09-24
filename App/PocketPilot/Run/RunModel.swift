@@ -43,6 +43,8 @@ final class RunModel {
     private var task: Task<Void, Never>?
     private let connection = Connection()
     private let runActivity = LiveActivityController()
+    /// The latest Live Activity update; each new one waits for it so updates land in order.
+    private var activityUpdate: Task<Void, Never>?
     private var currentStep = 0
     private var lastThought = ""
     private var lastAction = ""
@@ -59,26 +61,26 @@ final class RunModel {
         lastThought = ""
         lastAction = ""
         phase = .connecting
-        Task { await runActivity.start(goal: goal) }
         task = Task {
             defer { task = nil }
+            await runActivity.start(goal: goal)
             do {
                 let phone = try await connection.phone(pairing: pairing)
                 let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
                 phase = .finished(outcome)
-                await runActivity.end(conclusion: phase.conclusion ?? "")
+                await endActivity(phase.conclusion ?? "")
             } catch where Task.isCancelled {
                 phase = .idle
-                await runActivity.end(conclusion: String(localized: "Run stopped."))
+                await endActivity(String(localized: "Run stopped."))
             } catch let error as DeviceError where !error.isRecoverable {
                 Self.log.error("Run failed: \(error.description, privacy: .public)")
                 connection.reset()
                 phase = .failed(error.description)
-                await runActivity.end(conclusion: error.description)
+                await endActivity(error.description)
             } catch {
                 Self.log.error("Run failed: \(String(describing: error), privacy: .public)")
                 phase = .failed(String(describing: error))
-                await runActivity.end(conclusion: String(describing: error))
+                await endActivity(String(describing: error))
             }
         }
     }
@@ -95,13 +97,13 @@ final class RunModel {
             phase = .running(step: step)
             currentStep = step
             latestScreenshot = screen.screenshot.image
-            Task { await runActivity.update(step: step, thought: lastThought, action: lastAction) }
+            updateActivity()
         case .decided(let decision):
             let action = String(describing: decision.action)
             entries.append(Entry(id: entries.count, thought: decision.thought, action: action))
             lastThought = decision.thought
             lastAction = action
-            Task { await runActivity.update(step: currentStep, thought: lastThought, action: lastAction) }
+            updateActivity()
         case .failed(_, let reason):
             if let last = entries.indices.last { entries[last].failure = reason }
         }
@@ -109,3 +111,20 @@ final class RunModel {
 }
 
 extension RunModel: RunControl {}
+
+extension RunModel {
+    private func updateActivity() {
+        let previous = activityUpdate
+        let (step, thought, action) = (currentStep, lastThought, lastAction)
+        activityUpdate = Task {
+            await previous?.value
+            await runActivity.update(step: step, thought: thought, action: action)
+        }
+    }
+
+    /// Ends the activity after any update still in flight, so a late update can't outlive the run.
+    private func endActivity(_ conclusion: String) async {
+        await activityUpdate?.value
+        await runActivity.end(conclusion: conclusion)
+    }
+}
