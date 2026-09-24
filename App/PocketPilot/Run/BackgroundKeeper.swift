@@ -1,6 +1,7 @@
 import AVFoundation
 import AVKit
 import CoreGraphics
+import CoreMedia
 import Foundation
 import OSLog
 import UIKit
@@ -23,6 +24,8 @@ final class BackgroundKeeper: NSObject {
 
     private var displayLayer: AVSampleBufferDisplayLayer?
     private var pip: AVPictureInPictureController?
+    private var synchronizer: AVSampleBufferRenderSynchronizer?
+    private var receiver: AVSampleBufferVideoRenderer.Receiver?
     private var running = false
     private var lastSignature: String?
 
@@ -48,6 +51,12 @@ final class BackgroundKeeper: NSObject {
             Self.log.error("start with no source layer; PiP unavailable")
             return
         }
+        // iOS 27 path: the layer's renderer enqueues through a synchronizer
+        // receiver, and the synchronizer needs rate 1 or frames won't display.
+        let synchronizer = AVSampleBufferRenderSynchronizer()
+        synchronizer.setRate(1, time: CMClockGetTime(CMClockGetHostTimeClock()))
+        receiver = synchronizer.sampleBufferReceiver(adding: layer.sampleBufferRenderer)
+        self.synchronizer = synchronizer
         render(step: 0, thought: "", action: "")
         let controller = AVPictureInPictureController(
             contentSource: .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
@@ -71,10 +80,15 @@ final class BackgroundKeeper: NSObject {
         guard running else { return }
         let signature = "\(step)\n\(action)\n\(thought)"
         guard signature != lastSignature,
-              let sample = Self.sampleBuffer(step: step, thought: thought, action: action)
+              let sample = Self.sampleBuffer(step: step, thought: thought, action: action),
+              let receiver
         else { return }
         lastSignature = signature
-        displayLayer?.sampleBufferRenderer.enqueue(sample)
+        let ready = CMReadySampleBuffer<CMSampleBuffer.DynamicContent>(unsafeBuffer: sample)
+        let result = receiver.enqueueImmediately(ready)
+        if case .enqueued = result {} else {
+            Self.log.error("enqueue: \(String(describing: result), privacy: .public)")
+        }
     }
 
     /// Stops PiP and releases the audio session. Safe to call when idle.
@@ -84,6 +98,8 @@ final class BackgroundKeeper: NSObject {
         lastSignature = nil
         pip?.stopPictureInPicture()
         pip = nil
+        receiver = nil
+        synchronizer = nil
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 
@@ -93,10 +109,17 @@ final class BackgroundKeeper: NSObject {
 
     // MARK: - Card rendering
 
-    private static func sampleBuffer(step: Int, thought: String, action: String) -> CMSampleBuffer? {
+    private static func sampleBuffer(step: Int, thought: String, action: String) -> sending CMSampleBuffer? {
         let image = cardImage(step: step, thought: thought, action: action)
-        let width = Int(cardSize.width)
-        let height = Int(cardSize.height)
+        guard let cgImage = image.cgImage else { return nil }
+        return makeSample(from: cgImage)
+    }
+
+    /// Builds the media sample off the main actor so the (non-Sendable) buffer
+    /// stays in a disconnected region and can transfer to the ready wrapper.
+    private nonisolated static func makeSample(from image: CGImage) -> sending CMSampleBuffer? {
+        let width = image.width
+        let height = image.height
         var pixels: CVPixelBuffer?
         CVPixelBufferCreate(
             nil, width, height, kCVPixelFormatType_32BGRA,
@@ -116,8 +139,7 @@ final class BackgroundKeeper: NSObject {
         ) else { return nil }
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: 1, y: -1)
-        guard let cgImage = image.cgImage else { return nil }
-        ctx.draw(cgImage, in: CGRect(origin: .zero, size: cardSize))
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         var format: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pixels, formatDescriptionOut: &format)

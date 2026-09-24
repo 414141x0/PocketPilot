@@ -1,6 +1,7 @@
 #if DEBUG
 import AVFoundation
 import AVKit
+import CoreMedia
 import Metal
 import OSLog
 import SwiftUI
@@ -15,6 +16,8 @@ final class GPUProbe: NSObject {
     private let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "GPUProbe")
     private var pip: AVPictureInPictureController?
     private var displayLayer: AVSampleBufferDisplayLayer?
+    private var synchronizer: AVSampleBufferRenderSynchronizer?
+    private var receiver: AVSampleBufferVideoRenderer.Receiver?
     private var frameTimer: Timer?
 
     var mode: String? { ProcessInfo.processInfo.environment["POCKETPILOT_GPU_PROBE"] }
@@ -34,6 +37,11 @@ final class GPUProbe: NSObject {
             log.error("audio session: \(String(describing: error), privacy: .public)")
         }
         displayLayer = layer
+        // iOS 27 path: enqueue through a synchronizer receiver at rate 1.
+        let synchronizer = AVSampleBufferRenderSynchronizer()
+        synchronizer.setRate(1, time: CMClockGetTime(CMClockGetHostTimeClock()))
+        receiver = synchronizer.sampleBufferReceiver(adding: layer.sampleBufferRenderer)
+        self.synchronizer = synchronizer
         frameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { _ in
             MainActor.assumeIsolated { self.enqueueFrame() }
         }
@@ -48,17 +56,22 @@ final class GPUProbe: NSObject {
     }
 
     private func enqueueFrame() {
-        guard let layer = displayLayer else { return }
+        guard let receiver, let sample = Self.makeSample() else { return }
+        let ready = CMReadySampleBuffer<CMSampleBuffer.DynamicContent>(unsafeBuffer: sample)
+        _ = receiver.enqueueImmediately(ready)
+    }
+
+    private nonisolated static func makeSample() -> sending CMSampleBuffer? {
         var pixels: CVPixelBuffer?
         CVPixelBufferCreate(nil, 64, 64, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixels)
-        guard let pixels else { return }
+        guard let pixels else { return nil }
         var format: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pixels, formatDescriptionOut: &format)
-        guard let format else { return }
+        guard let format else { return nil }
         var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
         CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pixels, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sample)
-        if let sample { layer.sampleBufferRenderer.enqueue(sample) }
+        return sample
     }
 
     /// Dispatches a trivial compute kernel every two seconds and logs whether the GPU ran it.
