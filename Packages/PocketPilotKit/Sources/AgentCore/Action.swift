@@ -6,6 +6,8 @@ public enum Action: Sendable, Hashable, Codable {
     case tap(Target)
     case longPress(Target)
     case scroll(Direction, in: Target? = nil)
+    /// A finger dragged from one target to another: sliders, maps, carousels, pull-to-refresh.
+    case drag(from: Target, to: Target)
     case type(String)
     case press(HardwareButton)
     /// Presses an editing key on the keyboard, for example Return to submit a field.

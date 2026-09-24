@@ -33,6 +33,12 @@ import Foundation
         #expect(decision2.action == .scroll(.up, in: nil))
     }
 
+    @Test func mapsDragAction() {
+        let reply = Reply(thought: "Drag slider", action: .drag(fromX: 200, fromY: 500, toX: 800, toY: 500))
+        let decision = SystemPilot.mapDecision(reply)
+        #expect(decision.action == .drag(from: .point(Point(grid: 200, 500)), to: .point(Point(grid: 800, 500))))
+    }
+
     @Test func mapsTypeTextAction() {
         let reply = Reply(thought: "Enter text", action: .type(text: "Hello World"))
         let decision = SystemPilot.mapDecision(reply)

@@ -90,7 +90,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let actionProp = properties["action"] as! [String: Any]
         let anyOf = actionProp["anyOf"] as! [[String: Any]]
 
-        #expect(anyOf.count == 11)
+        #expect(anyOf.count == 12)
         for sub in anyOf {
             let subReq = sub["required"] as? [String] ?? []
             #expect(subReq.contains("kind"))
@@ -109,6 +109,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         ("{\"kind\":\"long_press\",\"element_id\":12}", .longPress(.element(12))),
         ("{\"kind\":\"scroll\",\"direction\":\"down\",\"element_id\":3}", .scroll(.down, in: .element(3))),
         ("{\"kind\":\"scroll\",\"direction\":\"up\",\"element_id\":null}", .scroll(.up, in: nil)),
+        ("{\"kind\":\"drag\",\"from_x\":200,\"from_y\":800,\"to_x\":200,\"to_y\":300}", .drag(from: .point(Point(grid: 200, 800)), to: .point(Point(grid: 200, 300)))),
         ("{\"kind\":\"type\",\"text\":\"hello\"}", .type("hello")),
         ("{\"kind\":\"press\",\"button\":\"lock\"}", .press(.lock)),
         ("{\"kind\":\"press\",\"button\":\"home\"}", .press(.home)),

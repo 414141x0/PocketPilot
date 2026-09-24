@@ -166,6 +166,7 @@ extension Screenshot {
         (Action.tap(.element(3)), "tap [3]"),
         (.tap(.point(Point(grid: 500, 420))), "tap (500,420)"),
         (.scroll(.down, in: .element(5)), "scroll down in [5]"),
+        (.drag(from: .element(3), to: .point(Point(grid: 100, 200))), "drag [3]->(100,200)"),
         (.type("hi"), #"type "hi""#),
         (.wait(seconds: 1.5), "wait 1.5s"),
     ])
@@ -182,6 +183,73 @@ extension Screenshot {
         let thoughtful = Step(goal: "g", screen: step.screen, history: [Turn(decision: Decision(thought: "Next: open Settings", action: .press(.home)))])
         #expect(thoughtful.historyOutline() == "1. press home — Next: open Settings")
         #expect(Step(goal: "g", screen: step.screen).historyOutline() == "(none yet)")
+    }
+}
+
+@Suite struct DragResolutionTests {
+    let screen = Screen(
+        screenshot: .blank(width: 1, height: 1),
+        elements: [Element(id: 3, role: .slider, label: "Volume", frame: Rect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))]
+    )
+
+    @Test func dragResolvesBothTargetsToSwipeEndpoints() throws {
+        let gesture = try Action.drag(from: .element(3), to: .point(Point(grid: 800, 500))).gesture(on: screen)
+        #expect(gesture == .swipe(from: Point(x: 0.5, y: 0.5), to: Point(grid: 800, 500)))
+    }
+
+    @Test func dragFailsOnUnknownElement() {
+        let action = Action.drag(from: .element(99), to: .point(Point(grid: 800, 500)))
+        #expect(throws: ResolutionError.unknownElement(99)) { try action.gesture(on: screen) }
+    }
+}
+
+@Suite struct KeepTests {
+    @Test(arguments: [
+        ("Did: tapped Expect: list Next: read\nKeep: code 42", "code 42"),
+        ("Keep: first\nKeep: second", "second"),
+        ("Keep:   \nKeep: kept", "kept"),
+        ("no keep here", nil),
+        ("Keep:   ", nil),
+    ])
+    func parsesLatestNonEmptyKeepLine(_ thought: String, _ expected: String?) {
+        #expect(Decision(thought: thought, action: .wait(seconds: 0)).keepFacts == expected)
+    }
+
+    @Test func capsKeepFactsAt200Characters() {
+        let long = String(repeating: "x", count: 300)
+        let facts = Decision(thought: "Keep: \(long)", action: .wait(seconds: 0)).keepFacts
+        #expect(facts == String(repeating: "x", count: 200))
+    }
+
+    @Test func briefShowsRememberedLineOnlyWhenSet() {
+        let screen = Screen(screenshot: .blank(width: 1, height: 1))
+        #expect(Step(goal: "g", screen: screen).brief().contains("Remembered:") == false)
+        #expect(Step(goal: "g", screen: screen, remembered: "code 42").brief().contains("Remembered: code 42"))
+    }
+
+    @Test func agentCarriesKeepLineToNextBrief() async throws {
+        let pilot = BriefCapturingPilot(decisions: [
+            Decision(thought: "Next: tap ok\nKeep: code 42", action: .tap(.element(1))),
+            Decision(thought: "Next: finish", action: .done(summary: "ok")),
+        ])
+        _ = try await Agent(device: FakeDevice(), pilot: pilot, settle: .zero).run("Remember")
+
+        let briefs = await pilot.briefs
+        #expect(briefs.count == 2)
+        #expect(briefs[0].contains("Remembered:") == false)
+        #expect(briefs[1].contains("Remembered: code 42"))
+    }
+}
+
+private actor BriefCapturingPilot: Pilot {
+    private var decisions: [Decision]
+    private(set) var briefs: [String] = []
+
+    init(decisions: [Decision]) { self.decisions = decisions }
+
+    func decide(_ step: Step) -> Decision {
+        briefs.append(step.brief())
+        return decisions.removeFirst()
     }
 }
 
