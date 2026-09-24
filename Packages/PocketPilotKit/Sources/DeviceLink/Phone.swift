@@ -24,7 +24,7 @@ public struct Phone: Device {
         let screenshot = try await screenshot()
         async let nodes = try? session.accessibilityNodes()
         let text = await screenshot.recognizedText()
-        return Screen(screenshot: screenshot, elements: .merging(await nodes ?? [], onto: text))
+        return Screen(screenshot: screenshot, merging: await nodes ?? [], onto: text)
     }
 
     public func perform(_ gesture: Gesture) async throws(DeviceError) {

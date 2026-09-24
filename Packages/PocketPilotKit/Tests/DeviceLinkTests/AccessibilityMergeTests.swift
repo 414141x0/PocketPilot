@@ -1,4 +1,5 @@
 import AgentCore
+import CoreGraphics
 import Testing
 @testable import DeviceLink
 
@@ -13,7 +14,7 @@ import Testing
             AccessibilityNode(role: "Search Field", label: "Search", traits: ["Selected"]),
         ]
 
-        let merged = [Element].merging(nodes, onto: [safariText, searchText, clockText])
+        let merged = Screen(screenshot: .blank, merging: nodes, onto: [safariText, searchText, clockText]).elements
 
         #expect(merged.map(\.label) == ["Safari", "Search", "9:41"])
         #expect(merged.map(\.role) == [.button, .textField, .text])
@@ -24,20 +25,22 @@ import Testing
 
     @Test func prefersExactMatchOverContainment() {
         let longer = Element(id: 4, role: .text, label: "Safari Settings", frame: .fullScreen)
-        let merged = [Element].merging([AccessibilityNode(role: "Button", label: "Safari")], onto: [longer, safariText])
+        let merged = Screen(screenshot: .blank, merging: [AccessibilityNode(role: "Button", label: "Safari")], onto: [longer, safariText]).elements
 
         #expect(merged.first?.frame == safariText.frame)
     }
 
-    @Test func dropsIgnoredAndUnmatchedNodes() {
+    @Test func listsUnmatchedNodesAsUnlocatedAndDropsIgnored() {
         let nodes = [
             AccessibilityNode(role: "Button", label: "Safari", ignored: true),
-            AccessibilityNode(role: "Image", label: "Wallpaper"),
+            AccessibilityNode(role: "Button", label: "Share"),
         ]
 
-        let merged = [Element].merging(nodes, onto: [safariText])
+        let screen = Screen(screenshot: .blank, merging: nodes, onto: [safariText])
 
-        #expect(merged.map(\.role) == [.text])
+        #expect(screen.elements.map(\.role) == [.text])
+        #expect(screen.unlocated == [#"button "Share""#])
+        #expect(screen.outline().hasSuffix(#"Also on screen, position unknown (tap them by point): button "Share""#))
     }
 
     @Test(arguments: [
@@ -46,5 +49,13 @@ import Testing
     ])
     func mapsRoleNames(_ name: String, _ role: Element.Role) {
         #expect(Element.Role(accessibilityRole: name) == role)
+    }
+}
+
+private extension Screenshot {
+    static var blank: Screenshot {
+        let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        return Screenshot(image: context.makeImage()!)
     }
 }

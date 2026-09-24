@@ -14,6 +14,9 @@ extension Screen {
         var lines = ["screen=\(screenshot.width)x\(screenshot.height) elements=\(shown.count)/\(meaningful.count)"]
         lines += shown.map(\.outline)
         if meaningful.count > limit { lines.append("…+\(meaningful.count - limit) more") }
+        if !unlocated.isEmpty {
+            lines.append("Also on screen, position unknown (tap them by point): " + unlocated.prefix(limit).joined(separator: ", "))
+        }
         return lines.joined(separator: "\n")
     }
 }

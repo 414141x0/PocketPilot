@@ -2,10 +2,14 @@
 public struct Screen: Sendable {
     public var screenshot: Screenshot
     public var elements: [Element]
+    /// Controls the device reports but whose position is unknown, such as icon-only buttons.
+    /// Pilots reach them by pointing at the screenshot.
+    public var unlocated: [String]
 
-    public init(screenshot: Screenshot, elements: [Element] = []) {
+    public init(screenshot: Screenshot, elements: [Element] = [], unlocated: [String] = []) {
         self.screenshot = screenshot
         self.elements = elements
+        self.unlocated = unlocated
     }
 
     public subscript(id: Element.ID) -> Element? {

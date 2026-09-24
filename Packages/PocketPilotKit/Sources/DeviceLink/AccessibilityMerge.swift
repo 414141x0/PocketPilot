@@ -10,21 +10,27 @@ struct AccessibilityNode: Sendable, Hashable, Decodable {
     var ignored = false
 }
 
-extension [Element] {
-    /// Elements that combine accessibility semantics with OCR geometry.
+extension Screen {
+    /// A screen that combines accessibility semantics with OCR geometry.
     ///
     /// Each labeled node takes the frame of the recognized text that reads the same,
-    /// preferring an exact match over containment. Text no node claims stays as plain text,
-    /// and nodes without matching text are dropped because nothing could target them.
-    static func merging(_ nodes: [AccessibilityNode], onto recognized: [Element]) -> [Element] {
+    /// preferring an exact match over containment. Text no node claims stays as plain text.
+    /// Labeled nodes with no matching text, typically icon-only controls, are listed as unlocated.
+    init(screenshot: Screenshot, merging nodes: [AccessibilityNode], onto recognized: [Element]) {
         var unclaimed = recognized
         var merged: [Element] = []
+        var unlocated: [String] = []
 
         for node in nodes where !node.ignored {
             guard let label = node.label?.normalizedForMatching, !label.isEmpty else { continue }
             let index = unclaimed.firstIndex { $0.label.normalizedForMatching == label }
                 ?? unclaimed.firstIndex { $0.label.normalizedForMatching.overlaps(label) }
-            guard let index else { continue }
+            guard let index else {
+                if let label = node.label {
+                    unlocated.append("\(Element.Role(accessibilityRole: node.role ?? "").rawValue) \"\(label)\"")
+                }
+                continue
+            }
 
             let text = unclaimed.remove(at: index)
             merged.append(Element(
@@ -42,7 +48,7 @@ extension [Element] {
             text.id = merged.count + 1
             merged.append(text)
         }
-        return merged
+        self.init(screenshot: screenshot, elements: merged, unlocated: unlocated)
     }
 }
 
