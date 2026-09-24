@@ -1,7 +1,7 @@
 mod ax;
 
 use std::ffi::{CStr, CString, c_char, c_void};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::ptr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,12 +14,12 @@ use idevice::core_device::{
     UniversalHidServiceClient, build_liveness, build_screen_audio_offer, build_screen_video_offer,
     build_start_audio_parameters, build_start_video_parameters, is_rtcp,
 };
-use idevice::core_device_proxy::CoreDeviceProxy;
-use idevice::pairing_file::PairingFile;
-use idevice::provider::TcpProvider;
+use idevice::remote_pairing::{
+    RemotePairingClient, RpPairingFile, RpPairingSocket, connect_tls_psk_tunnel_native,
+};
 use idevice::rsd::RsdHandshake;
 use idevice::tcp::handle::{AdapterHandle, UdpSocketHandle};
-use idevice::{IdeviceService, ReadWrite, RsdService};
+use idevice::{ReadWrite, RsdService};
 use tokio::sync::{mpsc, oneshot};
 
 const CLIENT_SUPPORTED_FEATURES: u64 = 140;
@@ -28,6 +28,7 @@ const KEY_LEFT_COMMAND: u64 = 0xE3;
 const KEY_V: u64 = 0x19;
 const CLIPBOARD_REPLACED_NOTE: &str =
     "The device clipboard was replaced; iOS may ask to allow pasting.";
+const REMOTE_PAIRING_PORT: u16 = 49_152;
 const VIDEO_SENDER_PORT: u16 = 50_001;
 
 /// Error categories returned by PilotBridge. The message carries operation-specific detail.
@@ -281,29 +282,65 @@ struct ConnectedSession {
 
 impl ConnectedSession {
     async fn connect(pairing_bytes: &[u8], host_ip: &str) -> Result<Self, BridgeError> {
-        let pairing_file = PairingFile::from_bytes(pairing_bytes)
-            .map_err(|error| BridgeError::connection("invalid pairing plist", error))?;
+        let mut pairing_file = RpPairingFile::from_bytes(pairing_bytes)
+            .map_err(|error| BridgeError::connection("invalid RemotePairing plist", error))?;
         let address: IpAddr = host_ip.parse().map_err(|error| {
             BridgeError::new(
                 PP_Error::InvalidArgument,
                 format!("invalid host IP: {error}"),
             )
         })?;
-        let provider = TcpProvider {
-            addr: address,
-            scope_id: None,
-            pairing_file,
-            label: "PocketPilot".into(),
-        };
 
-        let proxy = CoreDeviceProxy::connect(&provider)
+        let pairing_address = SocketAddr::new(address, REMOTE_PAIRING_PORT);
+        let pairing_stream = tokio::net::TcpStream::connect(pairing_address)
             .await
-            .map_err(|error| BridgeError::connection("CoreDeviceProxy connection failed", error))?;
-        let rsd_port = proxy.tunnel_info().server_rsd_port;
-        let mut adapter = proxy
-            .create_software_tunnel()
-            .map_err(|error| BridgeError::connection("software tunnel creation failed", error))?
-            .to_async_handle();
+            .map_err(|error| BridgeError::connection("RemotePairing connection failed", error))?;
+        let mut pairing =
+            RemotePairingClient::new(RpPairingSocket::new(pairing_stream), "PocketPilot");
+        pairing
+            .attempt_pair_verify()
+            .await
+            .map_err(|error| BridgeError::connection("RemotePairing handshake failed", error))?;
+        pairing
+            .validate_pairing(&mut pairing_file)
+            .await
+            .map_err(|error| BridgeError::connection("RemotePairing verification failed", error))?;
+
+        let tunnel_port = pairing.create_tcp_listener().await.map_err(|error| {
+            BridgeError::connection("RemotePairing tunnel listener creation failed", error)
+        })?;
+        let tunnel_stream = tokio::net::TcpStream::connect(SocketAddr::new(address, tunnel_port))
+            .await
+            .map_err(|error| {
+                BridgeError::connection("RemotePairing tunnel connection failed", error)
+            })?;
+        let tunnel = connect_tls_psk_tunnel_native(tunnel_stream, pairing.encryption_key())
+            .await
+            .map_err(|error| BridgeError::connection("RemotePairing TLS tunnel failed", error))?;
+
+        let client_ip = tunnel
+            .info
+            .client_address
+            .parse::<IpAddr>()
+            .map_err(|error| {
+                BridgeError::connection("invalid RemotePairing tunnel client address", error)
+            })?;
+        let server_ip = tunnel
+            .info
+            .server_address
+            .parse::<IpAddr>()
+            .map_err(|error| {
+                BridgeError::connection("invalid RemotePairing tunnel server address", error)
+            })?;
+        let mtu = usize::from(tunnel.info.mtu);
+        let rsd_port = tunnel.info.server_rsd_port;
+        let mut adapter = idevice::tcp::adapter::Adapter::new(
+            Box::new(tunnel.into_inner()),
+            client_ip,
+            server_ip,
+        );
+        adapter.set_mss(mtu.saturating_sub(60));
+        let mut adapter = adapter.to_async_handle();
         let stream = adapter
             .connect(rsd_port)
             .await
