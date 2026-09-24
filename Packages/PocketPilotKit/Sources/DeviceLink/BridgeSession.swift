@@ -53,6 +53,10 @@ final class BridgeSession: Sendable {
         try await complete { pp_press(handle, PP_Button(button), $0, $1) }
     }
 
+    func press(_ key: KeyboardKey) async throws(DeviceError) {
+        try await complete { pp_press_key(handle, key.usage, $0, $1) }
+    }
+
     func launch(_ bundleID: String) async throws(DeviceError) {
         try await complete { pp_launch_app(handle, bundleID, $0, $1) }
     }
@@ -133,6 +137,18 @@ private extension PP_Button {
         case .lock: PP_Button_Lock
         case .volumeUp: PP_Button_VolumeUp
         case .volumeDown: PP_Button_VolumeDown
+        }
+    }
+}
+
+private extension KeyboardKey {
+    /// The USB HID keyboard usage.
+    var usage: UInt64 {
+        switch self {
+        case .return: 0x28
+        case .escape: 0x29
+        case .delete: 0x2A
+        case .tab: 0x2B
         }
     }
 }

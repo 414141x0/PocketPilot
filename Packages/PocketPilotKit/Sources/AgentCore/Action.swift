@@ -8,6 +8,8 @@ public enum Action: Sendable, Hashable, Codable {
     case scroll(Direction, in: Target? = nil)
     case type(String)
     case press(HardwareButton)
+    /// Presses an editing key on the keyboard, for example Return to submit a field.
+    case key(KeyboardKey)
     /// Opens an app by display name ("Settings") or bundle identifier.
     case open(app: String)
     case wait(seconds: Double)
@@ -39,6 +41,10 @@ public enum HardwareButton: String, Sendable, Hashable, Codable, CaseIterable {
     case home, lock, volumeUp, volumeDown
 }
 
+public enum KeyboardKey: String, Sendable, Hashable, Codable, CaseIterable {
+    case `return`, tab, escape, delete
+}
+
 /// A device-level input with every target resolved to coordinates.
 public enum Gesture: Sendable, Hashable {
     case tap(Point)
@@ -46,5 +52,6 @@ public enum Gesture: Sendable, Hashable {
     case swipe(from: Point, to: Point, duration: Duration = .milliseconds(300))
     case type(String)
     case press(HardwareButton)
+    case key(KeyboardKey)
     case launch(bundleID: String)
 }

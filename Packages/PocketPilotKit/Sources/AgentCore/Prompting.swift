@@ -64,7 +64,9 @@ extension Pilot {
 
         - Target elements by id whenever one matches. For anything unboxed, such as an icon-only \
         button, tap its center as a grid point read from the screenshot.
-        - To enter text, tap the field first, then type. Typing does not submit.
+        - To enter text, tap the field first, then type. Typing does not submit: use key return to \
+        submit, tab for the next field, escape to dismiss, delete to erase one character.
+        - If iOS asks whether to allow pasting, tap Allow Paste.
         - Scroll direction names where the content moves: "down" reveals what is below.
         - Open apps by their name, as shown on the Home Screen: open "Settings".
         - If an action failed, read the reason and try something different rather than repeating it.
@@ -117,6 +119,7 @@ extension Action: CustomStringConvertible {
         case .scroll(let direction, let target?): "scroll \(direction) in \(target)"
         case .type(let text): "type \"\(text.truncated(to: 80))\""
         case .press(let button): "press \(button)"
+        case .key(let key): "key \(key)"
         case .open(let app): "open \(app)"
         case .wait(let seconds): "wait \(seconds == seconds.rounded() ? String(Int(seconds)) : String(seconds))s"
         case .done(let summary): "done: \(summary)"

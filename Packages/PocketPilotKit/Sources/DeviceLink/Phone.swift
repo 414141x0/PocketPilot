@@ -38,6 +38,7 @@ public struct Phone: Device {
         case .swipe(let start, let end, let duration): try await session.swipe(from: start, to: end, over: duration)
         case .type(let text): try await session.type(text)
         case .press(let button): try await session.press(button)
+        case .key(let key): try await session.press(key)
         case .launch(let bundleID): try await session.launch(bundleID)
         }
     }

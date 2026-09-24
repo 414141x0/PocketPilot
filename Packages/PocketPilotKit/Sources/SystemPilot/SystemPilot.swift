@@ -59,6 +59,7 @@ public struct SystemPilot: Pilot {
         case .scroll(let dir, let id): .scroll(dir.toDirection(), in: id.map { .element($0) })
         case .type(let text): .type(text)
         case .press(let btn): .press(btn.toButton())
+        case .key(let name): .key(name.key)
         case .open(let app): .open(app: app)
         case .wait(let seconds): .wait(seconds: seconds)
         case .done(let summary): .done(summary: summary)
@@ -100,6 +101,19 @@ struct Reply: Sendable {
     }
 }
 
+@Generable enum KeyName: Sendable {
+    case `return`, tab, escape, delete
+
+    var key: KeyboardKey {
+        switch self {
+        case .return: .return
+        case .tab: .tab
+        case .escape: .escape
+        case .delete: .delete
+        }
+    }
+}
+
 @Generable enum Choice: Sendable {
     case tap(element: Int)
     case tapPoint(x: Int, y: Int)
@@ -107,6 +121,7 @@ struct Reply: Sendable {
     case scroll(direction: Heading, element: Int?)
     case type(text: String)
     case press(button: Key)
+    case key(name: KeyName)
     case open(app: String)
     case wait(seconds: Double)
     case done(summary: String)

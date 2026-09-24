@@ -63,6 +63,7 @@ public struct OpenAIPilot: Pilot {
             ]),
             actionSchema("type", ["text": .init(.type(.string))]),
             actionSchema("press", ["button": .init(.type(.string), .enumValues(["home", "lock", "volumeUp", "volumeDown"]))]),
+            actionSchema("key", ["key": .init(.type(.string), .enumValues(KeyboardKey.allCases.map(\.rawValue)))]),
             actionSchema("open", ["app": .init(.type(.string), .description("App name as on the Home Screen"))]),
             actionSchema("wait", ["seconds": .init(.type(.number))]),
             actionSchema("done", ["summary": .init(.type(.string))]),
@@ -99,6 +100,7 @@ public struct OpenAIPilot: Pilot {
         case scroll(direction: Direction, elementId: Int?)
         case type(text: String)
         case press(button: HardwareButton)
+        case key(KeyboardKey)
         case open(app: String)
         case wait(seconds: Double)
         case done(summary: String)
@@ -106,7 +108,7 @@ public struct OpenAIPilot: Pilot {
 
         private enum DiscriminatorKeys: String, CodingKey { case kind }
         private enum CodingKeys: String, CodingKey {
-            case kind, x, y, direction, text, button, app, seconds, summary, reason
+            case kind, x, y, direction, text, button, key, app, seconds, summary, reason
             case elementId = "element_id"
         }
 
@@ -120,6 +122,7 @@ public struct OpenAIPilot: Pilot {
             case "scroll": self = .scroll(direction: try c.decode(Direction.self, forKey: .direction), elementId: try c.decodeIfPresent(Int.self, forKey: .elementId))
             case "type": self = .type(text: try c.decode(String.self, forKey: .text))
             case "press": self = .press(button: try c.decode(HardwareButton.self, forKey: .button))
+            case "key": self = .key(try c.decode(KeyboardKey.self, forKey: .key))
             case "open": self = .open(app: try c.decode(String.self, forKey: .app))
             case "wait": self = .wait(seconds: try c.decode(Double.self, forKey: .seconds))
             case "done": self = .done(summary: try c.decode(String.self, forKey: .summary))
@@ -137,6 +140,7 @@ public struct OpenAIPilot: Pilot {
             case .scroll(let dir, let id): .scroll(dir, in: id.map { .element($0) })
             case .type(let text): .type(text)
             case .press(let btn): .press(btn)
+            case .key(let key): .key(key)
             case .open(let app): .open(app: app)
             case .wait(let seconds): .wait(seconds: seconds)
             case .done(let summary): .done(summary: summary)

@@ -89,7 +89,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         let actionProp = properties["action"] as! [String: Any]
         let anyOf = actionProp["anyOf"] as! [[String: Any]]
 
-        #expect(anyOf.count == 10)
+        #expect(anyOf.count == 11)
         for sub in anyOf {
             let subReq = sub["required"] as? [String] ?? []
             #expect(subReq.contains("kind"))
@@ -112,6 +112,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         ("{\"kind\":\"press\",\"button\":\"lock\"}", .press(.lock)),
         ("{\"kind\":\"press\",\"button\":\"home\"}", .press(.home)),
         ("{\"kind\":\"open\",\"app\":\"Settings\"}", .open(app: "Settings")),
+        ("{\"kind\":\"key\",\"key\":\"return\"}", .key(.return)),
         ("{\"kind\":\"wait\",\"seconds\":1.5}", .wait(seconds: 1.5)),
         ("{\"kind\":\"done\",\"summary\":\"Finished\"}", .done(summary: "Finished")),
         ("{\"kind\":\"give_up\",\"reason\":\"Stuck\"}", .giveUp(reason: "Stuck"))

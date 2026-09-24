@@ -8,6 +8,7 @@ extension Action {
         case .scroll(let direction, let target): .swipe(direction, in: try screen.frame(for: target))
         case .type(let text): .type(text)
         case .press(let button): .press(button)
+        case .key(let key): .key(key)
         case .open(let app): .launch(bundleID: try apps.bundleID(for: app))
         case .wait, .done, .giveUp: nil
         }
