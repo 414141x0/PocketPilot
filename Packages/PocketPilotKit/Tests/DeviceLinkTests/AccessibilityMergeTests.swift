@@ -59,3 +59,16 @@ private extension Screenshot {
         return Screenshot(image: context.makeImage()!)
     }
 }
+
+@Suite struct DuplicateLabelTests {
+    @Test func repeatedLabelsPairInOrder() {
+        let upper = Element(id: 1, role: .text, label: "Close", frame: Rect(x: 0.8, y: 0.1, width: 0.1, height: 0.02))
+        let lower = Element(id: 2, role: .text, label: "Close", frame: Rect(x: 0.8, y: 0.6, width: 0.1, height: 0.02))
+        let nodes = [AccessibilityNode(role: "Button", label: "Close"), AccessibilityNode(role: "Button", label: "Close")]
+
+        let screen = Screen(screenshot: .blank, merging: nodes, onto: [upper, lower])
+
+        #expect(screen.elements.map(\.frame) == [upper.frame, lower.frame])
+        #expect(screen.unlocated.isEmpty)
+    }
+}

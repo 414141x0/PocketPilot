@@ -17,6 +17,8 @@ extension Screenshot {
                 guard let text = observation.topCandidates(1).first, text.confidence >= 0.3 else { return nil }
                 return (text.string, observation.isTitle, observation.boundingBox.verticallyFlipped().cgRect)
             }
+            // Reading order, with rows bucketed to 1% of the height, so repeated labels pair up in sequence.
+            .sorted { ($0.2.midY * 100).rounded() == ($1.2.midY * 100).rounded() ? $0.2.minX < $1.2.minX : $0.2.midY < $1.2.midY }
             .enumerated()
             .map { index, found in
                 let (text, isTitle, box) = found
