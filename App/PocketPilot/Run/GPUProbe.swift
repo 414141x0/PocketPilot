@@ -56,20 +56,22 @@ final class GPUProbe: NSObject {
     }
 
     private func enqueueFrame() {
-        guard let receiver else { return }
+        guard let receiver, let sample = Self.makeSample() else { return }
+        let ready = CMReadySampleBuffer<CMSampleBuffer.DynamicContent>(unsafeBuffer: sample)
+        _ = receiver.enqueueImmediately(ready)
+    }
+
+    private static func makeSample() -> sending CMSampleBuffer? {
         var pixels: CVPixelBuffer?
         CVPixelBufferCreate(nil, 64, 64, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixels)
-        guard let pixels else { return }
+        guard let pixels else { return nil }
         var format: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: pixels, formatDescriptionOut: &format)
-        guard let format else { return }
+        guard let format else { return nil }
         var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
         CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: pixels, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sample)
-        if let sample {
-            let ready = CMReadySampleBuffer<CMSampleBuffer.DynamicContent>(unsafeBuffer: sample)
-            _ = receiver.enqueueImmediately(ready)
-        }
+        return sample
     }
 
     /// Dispatches a trivial compute kernel every two seconds and logs whether the GPU ran it.

@@ -109,7 +109,7 @@ final class BackgroundKeeper: NSObject {
 
     // MARK: - Card rendering
 
-    private static func sampleBuffer(step: Int, thought: String, action: String) -> CMSampleBuffer? {
+    private static func sampleBuffer(step: Int, thought: String, action: String) -> sending CMSampleBuffer? {
         let image = cardImage(step: step, thought: thought, action: action)
         let width = Int(cardSize.width)
         let height = Int(cardSize.height)
