@@ -47,6 +47,11 @@ public final class DisplayCapture: Sendable {
         stream = SCStream(filter: filter, configuration: configuration, delegate: receiver)
     }
 
+    /// Whether frames are still arriving; false once the user or the system stops sharing.
+    public var isRunning: Bool {
+        receiver.state.withLock { $0.failure == nil }
+    }
+
     /// The newest frame.
     public func screenshot() throws(CaptureError) -> Screenshot {
         try receiver.state.withLock { state throws(CaptureError) in
@@ -170,6 +175,7 @@ private final class DisplayPicker: NSObject, SCContentSharingPickerObserver {
 public final class DisplayCapture: Sendable {
     @MainActor
     public static func start() async throws(CaptureError) -> DisplayCapture { throw .unavailable }
+    public var isRunning: Bool { false }
     public func screenshot() throws(CaptureError) -> Screenshot { throw .unavailable }
     public func settled(quiet: Duration = .milliseconds(250), timeout: Duration = .seconds(3)) async throws {}
     public func stop() async {}

@@ -3,7 +3,10 @@ import DeviceLink
 import Foundation
 import Observation
 
-/// One link to this iPhone, shared by every run so the screen-sharing picker appears once per launch.
+/// One link to this iPhone, shared by every run.
+///
+/// Screen sharing and the device session are independent: a failed or reset session
+/// is retried without stopping the share, so the picker appears once per launch.
 @Observable
 final class Connection {
     enum State: Equatable {
@@ -16,6 +19,7 @@ final class Connection {
 
     private(set) var state = State.disconnected
     private var phone: Phone?
+    private var display: DisplayCapture?
     /// The connection in flight; callers arriving during it await the same result instead of reconnecting.
     private var connecting: Task<Phone, any Error>?
 
@@ -42,7 +46,8 @@ final class Connection {
         #endif
     }
 
-    /// Drops the link so the next run reconnects, for example after LocalDevVPN restarts.
+    /// Drops the device session so the next run reconnects, for example after LocalDevVPN restarts.
+    /// Screen sharing continues.
     func reset() {
         connecting?.cancel()
         connecting = nil
@@ -52,16 +57,23 @@ final class Connection {
 
     private func connect(_ pairing: PairingFile) async throws(DeviceError) -> Phone {
         state = .connecting
-        let display = Self.sharesScreen ? try? await DisplayCapture.start() : nil
+        let display = await sharedDisplay()
         do {
             let phone = try await Phone.connect(pairing: pairing, display: display)
             self.phone = phone
             state = .connected(seesScreen: display != nil)
             return phone
         } catch {
-            await display?.stop()
             state = .failed(error)
             throw error
         }
+    }
+
+    /// The running screen share, asking the user only when there is none.
+    private func sharedDisplay() async -> DisplayCapture? {
+        guard Self.sharesScreen else { return nil }
+        if let display, display.isRunning { return display }
+        display = try? await DisplayCapture.start()
+        return display
     }
 }
