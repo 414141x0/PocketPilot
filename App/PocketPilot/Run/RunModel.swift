@@ -83,10 +83,12 @@ final class RunModel {
                 let phone = try await connection.phone(pairing: pairing)
                 for gesture in Self.preparation {
                     try await phone.perform(gesture)
+                    // Two quick Home presses open the App Switcher; let each one land.
+                    try await Task.sleep(for: .milliseconds(700))
                 }
                 // Hide the PiP status card before the first observation so the pilot never sees it.
                 await stashPiPCard(phone: phone)
-                let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
+                let outcome = try await Agent(device: phone, pilot: pilot, startsAt: "Home Screen").run(goal) { record($0) }
                 phase = .finished(outcome)
                 await endActivity(phase.conclusion ?? "")
             } catch where Task.isCancelled {
@@ -128,14 +130,15 @@ final class RunModel {
         }
         do {
             // A fast flick stashes; a slow drag just moves the card. Retry once, faster.
-            for duration in [Duration.milliseconds(120), Duration.milliseconds(60)] {
+            for (attempt, duration) in [Duration.milliseconds(120), .milliseconds(60)].enumerated() {
                 let screen = try await phone.observe()
                 guard let card = screen.elements.first(where: Self.isPiPCard) else {
-                    Self.log.info("pip stash: card not visible, nothing to hide")
+                    Self.log.info("\(attempt == 0 ? "pip stash: card not visible, nothing to hide" : "pip stash succeeded", privacy: .public)")
                     return
                 }
                 let center = card.frame.center
                 try await phone.perform(.swipe(from: center, to: Point(x: 0, y: center.y), duration: duration))
+                try await Task.sleep(for: .milliseconds(500))
             }
             let screen = try await phone.observe()
             if screen.elements.contains(where: Self.isPiPCard) {
