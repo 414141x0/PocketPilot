@@ -1,4 +1,6 @@
 /// An app on the device that the agent can open by name.
+import Foundation
+
 public struct InstalledApp: Sendable, Hashable, Decodable {
     public var name: String
     public var bundleID: String
@@ -15,6 +17,16 @@ public struct InstalledApp: Sendable, Hashable, Decodable {
 }
 
 extension [InstalledApp] {
+    /// Names of apps that appear as whole words in `text`, longest first so "App Store" wins over "App".
+    func named(in text: String) -> [String] {
+        let words = text.lowercased()
+        return map(\.name)
+            .filter { name in
+                name.count >= 3 && words.range(of: "\\b\(NSRegularExpression.escapedPattern(for: name.lowercased()))\\b", options: .regularExpression) != nil
+            }
+            .sorted { $0.count > $1.count }
+    }
+
     /// The bundle identifier for `query`, which may be a display name or a bundle identifier.
     ///
     /// Tries, in order: an exact bundle identifier, a case-insensitive name, then a name that

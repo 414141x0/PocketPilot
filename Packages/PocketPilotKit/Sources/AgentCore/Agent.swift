@@ -57,6 +57,7 @@ public struct Agent: Sendable {
         var visits: [[Element]: Int] = [:]
         var remembered: String?
         let apps = (try? await device.installedApps()) ?? []
+        let mentionedApps = apps.named(in: goal)
         for gesture in preparation {
             try await device.perform(gesture)
             try await Task.sleep(for: settle)
@@ -81,7 +82,7 @@ public struct Agent: Sendable {
                 }
             }
 
-            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered)
+            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps)
             onEvent(.observed(screen, step: step.number))
 
             let decision = try await pilot.decide(step)

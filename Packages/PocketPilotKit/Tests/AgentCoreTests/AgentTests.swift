@@ -369,3 +369,21 @@ private actor AlternatingDevice: Device {
         #expect(Decision(thought: "Next: go home. Keep:", action: .press(.home)).keepFacts == nil)
     }
 }
+
+@Suite struct MentionedAppTests {
+    let apps = [
+        InstalledApp(name: "Settings", bundleID: "com.apple.Preferences"),
+        InstalledApp(name: "App Store", bundleID: "com.apple.AppStore"),
+        InstalledApp(name: "Notes", bundleID: "com.apple.mobilenotes"),
+    ]
+
+    @Test func findsWholeWordAppNames() {
+        #expect(apps.named(in: "Open settings, then check the App Store") == ["App Store", "Settings"])
+        #expect(apps.named(in: "Write footnotes") == [], "Notes must match as a whole word")
+    }
+
+    @Test func briefNamesThemWithOpen() {
+        let step = Step(goal: "g", screen: Screen(screenshot: .blank(width: 1, height: 1)), mentionedApps: ["Settings"])
+        #expect(step.brief().contains(#"Apps in the goal: "Settings" (installed; reach them with open)"#))
+    }
+}

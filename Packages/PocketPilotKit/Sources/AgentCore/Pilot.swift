@@ -16,12 +16,15 @@ public struct Step: Sendable {
     public var history: [Turn]
     /// The latest facts the pilot asked to remember with a `Keep:` line, if any.
     public var remembered: String?
+    /// Installed apps the goal names, which small models otherwise fail to reach with `open`.
+    public var mentionedApps: [String]
 
-    public init(goal: String, screen: Screen, history: [Turn] = [], remembered: String? = nil) {
+    public init(goal: String, screen: Screen, history: [Turn] = [], remembered: String? = nil, mentionedApps: [String] = []) {
         self.goal = goal
         self.screen = screen
         self.history = history
         self.remembered = remembered
+        self.mentionedApps = mentionedApps
     }
 
     public var number: Int { history.count + 1 }

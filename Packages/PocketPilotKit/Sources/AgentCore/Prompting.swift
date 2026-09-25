@@ -96,6 +96,10 @@ extension Step {
     /// Smaller limits suit models with small context windows.
     public func brief(historyLimit: Int = 20, elementLimit: Int = 200) -> String {
         var head = "Goal: \(goal)"
+        if !mentionedApps.isEmpty {
+            head += "\n\nApps in the goal: " + mentionedApps.map { "\"\($0)\"" }.joined(separator: ", ")
+                + " (installed; reach them with open)"
+        }
         if let remembered { head += "\n\nRemembered: \(remembered)" }
         return """
         \(head)
