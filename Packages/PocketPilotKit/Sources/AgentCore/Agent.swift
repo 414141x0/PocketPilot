@@ -83,7 +83,7 @@ public struct Agent: Sendable {
             previous = screen
             if let last = history.indices.last, case .type(let text, _) = history[last].decision.action,
                let shown = screen.element(showing: text) {
-                history[last].confirmation = "now on screen: [\(shown.id)]"
+                history[last].confirmation = "typed, now on screen: [\(shown.id)]; to submit it, key return or tap the confirm button"
             }
             if !screen.elements.isEmpty {
                 visits[screen.elements, default: 0] += 1

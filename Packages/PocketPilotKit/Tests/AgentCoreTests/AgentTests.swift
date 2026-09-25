@@ -444,7 +444,7 @@ private actor AppListingDevice: Device {
         let pilot = ScriptedPilot(.type("eating dinner", replacing: false), .giveUp(reason: "x"))
         _ = try await Agent(device: TypingDevice(), pilot: pilot, settle: .zero).run("Search")
 
-        #expect(await pilot.lastHistory.first?.confirmation == "now on screen: [1]")
+        #expect(await pilot.lastHistory.first?.confirmation?.hasPrefix("typed, now on screen: [1]") == true)
     }
 }
 
