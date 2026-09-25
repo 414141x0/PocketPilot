@@ -39,15 +39,12 @@ public struct Decision: Sendable, Hashable, Codable {
 }
 
 extension Decision {
-    /// The latest non-empty `Keep: <facts>` line in the thought, capped at 200
-    /// characters. Parsed here so every pilot shares one memory rule.
+    /// The facts after the last `Keep:` in the thought, to the end of that line, capped at
+    /// 200 characters. Models often write it inline, so it needn't start a line.
     public var keepFacts: String? {
-        thought.split(separator: "\n").reversed().compactMap { line -> String? in
-            let stripped = line.trimmingCharacters(in: .whitespaces)
-            guard stripped.hasPrefix("Keep:") else { return nil }
-            let facts = stripped.dropFirst("Keep:".count).trimmingCharacters(in: .whitespaces)
-            return facts.isEmpty ? nil : String(facts.prefix(200))
-        }.first
+        guard let marker = thought.range(of: "Keep:", options: [.backwards, .caseInsensitive]) else { return nil }
+        let facts = thought[marker.upperBound...].prefix { !$0.isNewline }.trimmingCharacters(in: .whitespaces)
+        return facts.isEmpty ? nil : String(facts.prefix(200))
     }
 }
 

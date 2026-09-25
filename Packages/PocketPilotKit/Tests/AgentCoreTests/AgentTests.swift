@@ -345,3 +345,18 @@ private actor AlternatingDevice: Device {
 
     func perform(_ gesture: Gesture) throws(DeviceError) {}
 }
+
+@Suite struct InlineKeepTests {
+    @Test(arguments: [
+        ("Did: opened. Next: tap [3]. Keep: code 4812", "code 4812"),
+        ("Next: tap [3]\nkeep: Anna's flight is LH 401", "Anna's flight is LH 401"),
+        ("Keep: old\nKeep: new", "new"),
+    ])
+    func findsInlineAndLatestKeep(_ thought: String, _ facts: String) {
+        #expect(Decision(thought: thought, action: .press(.home)).keepFacts == facts)
+    }
+
+    @Test func ignoresEmptyKeep() {
+        #expect(Decision(thought: "Next: go home. Keep:", action: .press(.home)).keepFacts == nil)
+    }
+}
