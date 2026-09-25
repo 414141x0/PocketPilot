@@ -48,7 +48,6 @@ final class RunModel {
     /// The latest Live Activity update; each new one waits for it so updates land in order.
     private var activityUpdate: Task<Void, Never>?
     private var currentStep = 0
-    private var currentGoal = ""
     private var lastThought = ""
     private var lastAction = ""
 
@@ -63,7 +62,6 @@ final class RunModel {
     func start(_ goal: String, pairing: PairingFile, pilot: any Pilot) {
         guard !isRunning else { return }
         entries = []
-        currentGoal = goal
         #if DEBUG
         StepRecorder.reset()
         #endif
@@ -107,14 +105,13 @@ final class RunModel {
     private func record(_ event: Agent.Event) {
         Self.log.info("\(String(describing: event), privacy: .public)")
         switch event {
-        case .observed(let screen, let step):
+        case .observed(let step):
             #if DEBUG
-            let history = entries.map { Turn(decision: Decision(thought: $0.thought, action: .wait(seconds: 0)), failure: $0.failure) }
-            Task { await StepRecorder.record(Step(goal: currentGoal, screen: screen, history: history)) }
+            Task { await StepRecorder.record(step) }
             #endif
-            phase = .running(step: step)
-            currentStep = step
-            latestScreenshot = screen.screenshot.image
+            phase = .running(step: step.number)
+            currentStep = step.number
+            latestScreenshot = step.screen.screenshot.image
             updateActivity()
         case .decided(let decision):
             let action = String(describing: decision.action)

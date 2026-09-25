@@ -40,7 +40,8 @@ public struct Agent: Sendable {
     }
 
     public enum Event: Sendable {
-        case observed(Screen, step: Int)
+        /// The exact step handed to the pilot: screen, history, and context.
+        case observed(Step)
         case decided(Decision)
         case failed(Action, reason: String)
     }
@@ -84,7 +85,7 @@ public struct Agent: Sendable {
             }
 
             let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps, location: location)
-            onEvent(.observed(screen, step: step.number))
+            onEvent(.observed(step))
 
             let decision = try await pilot.decide(step)
             if let keep = decision.keepFacts { remembered = keep }
