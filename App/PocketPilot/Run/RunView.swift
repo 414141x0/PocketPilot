@@ -111,6 +111,11 @@ struct RunView: View {
                 if ProcessInfo.processInfo.environment["POCKETPILOT_EVAL"] != nil, let pairing = setup.pairing {
                     await EvalProbe.run(pairing: pairing, pilot: setup.pilot)
                 }
+                if ProcessInfo.processInfo.environment["POCKETPILOT_MLX_DOWNLOAD_PROBE"] != nil {
+                    setup.brain = .localMLX
+                    isShowingSetup = true
+                    setup.downloadMLX()
+                }
                 if let goal = ProcessInfo.processInfo.environment["POCKETPILOT_GOAL"], let pairing = setup.pairing {
                     if let pilot = try? setup.makePilot() {
                         model.start(goal, pairing: pairing, pilot: pilot)
