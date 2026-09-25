@@ -40,9 +40,15 @@ import Foundation
     }
 
     @Test func mapsTypeTextAction() {
-        let reply = Reply(thought: "Enter text", action: .type(text: "Hello World"))
+        let reply = Reply(thought: "Enter text", action: .type(text: "Hello World", replacing: false))
         let decision = SystemPilot.mapDecision(reply)
-        #expect(decision.action == .type("Hello World"))
+        #expect(decision.action == .type("Hello World", replacing: false))
+    }
+
+    @Test func mapsReplacingTypeAction() {
+        let reply = Reply(thought: "Replace text", action: .type(text: "Hello World", replacing: true))
+        let decision = SystemPilot.mapDecision(reply)
+        #expect(decision.action == .type("Hello World", replacing: true))
     }
 
     @Test func mapsPressButtonActions() {

@@ -81,7 +81,7 @@ public struct Agent: Sendable {
                 onEvent(.failed(history[last].decision.action, reason: reason))
             }
             previous = screen
-            if let last = history.indices.last, case .type(let text) = history[last].decision.action,
+            if let last = history.indices.last, case .type(let text, _) = history[last].decision.action,
                let shown = screen.element(showing: text) {
                 history[last].confirmation = "now on screen: [\(shown.id)]"
             }
@@ -128,6 +128,12 @@ public struct Agent: Sendable {
     /// Failures that make further progress impossible are thrown.
     private func perform(_ action: Action, on screen: Screen, apps: [InstalledApp]) async throws -> String? {
         do {
+            if case .type(let text, replacing: true) = action {
+                for gesture in [Gesture.selectAll, .key(.delete), .type(text)] {
+                    try await device.perform(gesture)
+                }
+                return nil
+            }
             guard let gesture = try action.gesture(on: screen, apps: apps) else { return nil }
             try await device.perform(gesture)
             return nil

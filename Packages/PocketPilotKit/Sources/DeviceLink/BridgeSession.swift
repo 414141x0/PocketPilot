@@ -52,6 +52,11 @@ final class BridgeSession: Sendable {
         try await complete { pp_type_text(handle, text, $0, $1) }
     }
 
+    /// Selects all text in the focused field: the allow-listed Left Command + A chord.
+    func selectAll() async throws(DeviceError) {
+        try await complete { pp_press_chord(handle, 0xE3, 0x04, $0, $1) }
+    }
+
     func press(_ button: HardwareButton) async throws(DeviceError) {
         try await complete { pp_press(handle, PP_Button(button), $0, $1) }
     }

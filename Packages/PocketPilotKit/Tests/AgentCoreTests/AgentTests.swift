@@ -7,7 +7,7 @@ import Testing
 @Suite struct AgentTests {
     @Test func completesWhenPilotIsDone() async throws {
         let device = FakeDevice()
-        let pilot = ScriptedPilot(.tap(.element(1)), .type("hello"), .done(summary: "Sent"))
+        let pilot = ScriptedPilot(.tap(.element(1)), .type("hello", replacing: false), .done(summary: "Sent"))
         let agent = Agent(device: device, pilot: pilot, settle: .zero)
 
         let outcome = try await agent.run("Send hello")
@@ -68,12 +68,29 @@ import Testing
 
     @Test func typesTextOnlyOnce() async throws {
         let device = FakeDevice()
-        let pilot = ScriptedPilot(.type("hello"), .type("hello"), .done(summary: "typed"))
+        let pilot = ScriptedPilot(.type("hello", replacing: false), .type("hello", replacing: false), .done(summary: "typed"))
         _ = try await Agent(device: device, pilot: pilot, settle: .zero).run("Type hello")
 
         #expect(await device.gestures == [.type("hello")])
         #expect(await pilot.lastHistory.first?.failure == nil, "Typing is never reported as 'screen did not change'")
         #expect(await pilot.lastHistory.last?.failure?.hasPrefix("Skipped: this text was already typed") == true)
+    }
+
+    @Test func replacingSelectsAllDeletesThenTypes() async throws {
+        let device = FakeDevice()
+        let pilot = ScriptedPilot(.type("Wi-Fi", replacing: true), .done(summary: "typed"))
+        _ = try await Agent(device: device, pilot: pilot, settle: .zero).run("Replace field text")
+
+        #expect(await device.gestures == [.selectAll, .key(.delete), .type("Wi-Fi")])
+    }
+
+    @Test func replacingAfterPlainTypeIsNotSkipped() async throws {
+        let device = FakeDevice(changesEachStep: true)
+        let pilot = ScriptedPilot(.type("x", replacing: false), .type("x", replacing: true), .done(summary: "typed"))
+        _ = try await Agent(device: device, pilot: pilot, settle: .zero).run("Type then replace")
+
+        #expect(await device.gestures == [.type("x"), .selectAll, .key(.delete), .type("x")])
+        #expect(await pilot.lastHistory.allSatisfy { $0.failure == nil })
     }
 
     @Test func flagsCircling() async throws {
@@ -188,7 +205,8 @@ extension Screenshot {
         (.tap(.point(Point(grid: 500, 420))), "tap (500,420)"),
         (.scroll(.down, in: .element(5)), "scroll down in [5]"),
         (.drag(from: .element(3), to: .point(Point(grid: 100, 200))), "drag [3]->(100,200)"),
-        (.type("hi"), #"type "hi""#),
+        (.type("hi", replacing: false), #"type "hi""#),
+        (.type("hi", replacing: true), #"type "hi" replacing"#),
         (.wait(seconds: 1.5), "wait 1.5s"),
     ])
     func actionsReadCompactly(_ action: Action, _ expected: String) {
@@ -293,8 +311,8 @@ private actor BriefCapturingPilot: Pilot {
     }
 
     @Test func prefersPrimary() async throws {
-        let pilot = Fixed(action: .type("a")).fallback(to: Fixed(action: .type("b")))
-        #expect(try await pilot.decide(step).action == .type("a"))
+        let pilot = Fixed(action: .type("a", replacing: false)).fallback(to: Fixed(action: .type("b", replacing: false)))
+        #expect(try await pilot.decide(step).action == .type("a", replacing: false))
     }
 
     @Test func doesNotFallBackOnCancellation() async {
@@ -423,7 +441,7 @@ private actor AppListingDevice: Device {
 
 @Suite struct TypedTextConfirmationTests {
     @Test func confirmsTypedTextOnNextScreen() async throws {
-        let pilot = ScriptedPilot(.type("eating dinner"), .giveUp(reason: "x"))
+        let pilot = ScriptedPilot(.type("eating dinner", replacing: false), .giveUp(reason: "x"))
         _ = try await Agent(device: TypingDevice(), pilot: pilot, settle: .zero).run("Search")
 
         #expect(await pilot.lastHistory.first?.confirmation == "now on screen: [1]")

@@ -8,7 +8,8 @@ public enum Action: Sendable, Hashable, Codable {
     case scroll(Direction, in: Target? = nil)
     /// A finger dragged from one target to another: sliders, maps, carousels, pull-to-refresh.
     case drag(from: Target, to: Target)
-    case type(String)
+    /// Types into the focused field; `replacing` clears existing text first (select all, delete, type).
+    case type(String, replacing: Bool)
     case press(HardwareButton)
     /// Presses an editing key on the keyboard, for example Return to submit a field.
     case key(KeyboardKey)
@@ -53,6 +54,8 @@ public enum Gesture: Sendable, Hashable {
     case longPress(Point, duration: Duration = .seconds(1))
     case swipe(from: Point, to: Point, duration: Duration = .milliseconds(300))
     case type(String)
+    /// Selects all text in the focused field (Command-A), the first step of replacing field text.
+    case selectAll
     case press(HardwareButton)
     case key(KeyboardKey)
     case launch(bundleID: String)

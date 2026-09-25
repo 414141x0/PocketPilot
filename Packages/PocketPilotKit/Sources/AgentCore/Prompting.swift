@@ -74,6 +74,7 @@ extension Pilot {
         button, tap its center as a grid point read from the screenshot.
         - To enter text, tap the field first, then type. Typing does not submit: use key return to \
         submit, tab for the next field, escape to dismiss, delete to erase one character.
+        - type replacing:true to clear a field that already has text.
         - If iOS asks whether to allow pasting, tap Allow Paste.
         - Scroll direction names where the content moves: "down" reveals what is below.
         - Drag from one point to another for sliders, maps, carousels, or pull-to-refresh.
@@ -139,7 +140,8 @@ extension Action: CustomStringConvertible {
         case .scroll(let direction, nil): "scroll \(direction)"
         case .scroll(let direction, let target?): "scroll \(direction) in \(target)"
         case .drag(let from, let to): "drag \(from)->\(to)"
-        case .type(let text): "type \"\(text.truncated(to: 80))\""
+        case .type(let text, replacing: false): "type \"\(text.truncated(to: 80))\""
+        case .type(let text, replacing: true): "type \"\(text.truncated(to: 80))\" replacing"
         case .press(let button): "press \(button)"
         case .key(let key): "key \(key)"
         case .open(let app): "open \(app)"

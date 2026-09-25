@@ -67,7 +67,7 @@ public struct OpenAIPilot: Pilot {
                 "to_x": .init(.type(.integer)),
                 "to_y": .init(.type(.integer)),
             ]),
-            actionSchema("type", ["text": .init(.type(.string))]),
+            actionSchema("type", ["text": .init(.type(.string)), "replacing": .init(.type(.boolean))]),
             actionSchema("press", ["button": .init(.type(.string), .enumValues(["home", "lock", "volumeUp", "volumeDown"]))]),
             actionSchema("key", ["key": .init(.type(.string), .enumValues(KeyboardKey.allCases.map(\.rawValue)))]),
             actionSchema("open", ["app": .init(.type(.string), .description("App name as on the Home Screen"))]),
@@ -105,7 +105,7 @@ public struct OpenAIPilot: Pilot {
         case longPress(elementId: Int)
         case scroll(direction: Direction, elementId: Int?)
         case drag(fromX: Int, fromY: Int, toX: Int, toY: Int)
-        case type(text: String)
+        case type(text: String, replacing: Bool)
         case press(button: HardwareButton)
         case key(KeyboardKey)
         case open(app: String)
@@ -115,7 +115,7 @@ public struct OpenAIPilot: Pilot {
 
         private enum DiscriminatorKeys: String, CodingKey { case kind }
         private enum CodingKeys: String, CodingKey {
-            case kind, x, y, direction, text, button, key, app, seconds, summary, reason
+            case kind, x, y, direction, text, replacing, button, key, app, seconds, summary, reason
             case elementId = "element_id"
             case fromX = "from_x", fromY = "from_y", toX = "to_x", toY = "to_y"
         }
@@ -129,7 +129,7 @@ public struct OpenAIPilot: Pilot {
             case "long_press": self = .longPress(elementId: try c.decode(Int.self, forKey: .elementId))
             case "scroll": self = .scroll(direction: try c.decode(Direction.self, forKey: .direction), elementId: try c.decodeIfPresent(Int.self, forKey: .elementId))
             case "drag": self = .drag(fromX: try c.decode(Int.self, forKey: .fromX), fromY: try c.decode(Int.self, forKey: .fromY), toX: try c.decode(Int.self, forKey: .toX), toY: try c.decode(Int.self, forKey: .toY))
-            case "type": self = .type(text: try c.decode(String.self, forKey: .text))
+            case "type": self = .type(text: try c.decode(String.self, forKey: .text), replacing: try c.decode(Bool.self, forKey: .replacing))
             case "press": self = .press(button: try c.decode(HardwareButton.self, forKey: .button))
             case "key": self = .key(try c.decode(KeyboardKey.self, forKey: .key))
             case "open": self = .open(app: try c.decode(String.self, forKey: .app))
@@ -149,7 +149,7 @@ public struct OpenAIPilot: Pilot {
             case .scroll(let dir, let id): .scroll(dir, in: id.map { .element($0) })
             case .drag(let fromX, let fromY, let toX, let toY):
                 .drag(from: .point(Point(grid: fromX, fromY)), to: .point(Point(grid: toX, toY)))
-            case .type(let text): .type(text)
+            case .type(let text, let replacing): .type(text, replacing: replacing)
             case .press(let btn): .press(btn)
             case .key(let key): .key(key)
             case .open(let app): .open(app: app)
