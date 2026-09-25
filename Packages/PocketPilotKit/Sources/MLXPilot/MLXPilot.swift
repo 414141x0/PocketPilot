@@ -16,6 +16,7 @@ public struct MLXPilot: Pilot {
     private static let minimumAvailableMemory = 3_250_000_000
     private static let initialElementLimit = 60
     private static let retryElementLimit = 30
+    private static let maximumResponseTokens = 128
 
     private let model: MLXLanguageModel
     public let maxHistoryTurns: Int
@@ -58,29 +59,46 @@ public struct MLXPilot: Pilot {
     }
 
     public func decide(_ step: Step) async throws -> Decision {
-        let image = Self.resized(await step.screen.markedScreenshot().image, maximumDimension: 512)
         let clock = ContinuousClock()
+        let preparationStart = clock.now
+        let image = Self.resized(await step.screen.markedScreenshot().image, maximumDimension: 512)
+        Self.log.info(
+            "Step \(step.number, privacy: .public) input prepared in \(Self.milliseconds(preparationStart.duration(to: clock.now)), privacy: .public) ms at \(image.width, privacy: .public)x\(image.height, privacy: .public)"
+        )
         let start = clock.now
         do {
-            let reply: Reply
-            do {
-                reply = try await respond(
-                    to: step,
-                    image: image,
-                    historyLimit: maxHistoryTurns,
-                    elementLimit: Self.initialElementLimit
-                )
-            } catch LanguageModelError.contextSizeExceeded(let context) {
-                let limits = Self.contextRetryLimits(maxHistoryTurns: maxHistoryTurns)
-                Self.log.notice(
-                    "Step \(step.number, privacy: .public) exceeded \(context.contextSize, privacy: .public) tokens with \(context.tokenCount, privacy: .public); retrying with history \(limits.history, privacy: .public) and \(limits.elements, privacy: .public) elements"
-                )
-                reply = try await respond(
-                    to: step,
-                    image: image,
-                    historyLimit: limits.history,
-                    elementLimit: limits.elements
-                )
+            var limits = (history: maxHistoryTurns, elements: Self.initialElementLimit)
+            var correction: String?
+            var reply: Reply?
+            for attempt in 1 ... 2 {
+                do {
+                    reply = try await respond(
+                        to: step,
+                        image: image,
+                        historyLimit: limits.history,
+                        elementLimit: limits.elements,
+                        correction: correction
+                    )
+                    break
+                } catch LanguageModelError.contextSizeExceeded(let context) where attempt == 1 {
+                    limits = Self.contextRetryLimits(maxHistoryTurns: maxHistoryTurns)
+                    Self.log.notice(
+                        "Step \(step.number, privacy: .public) exceeded \(context.contextSize, privacy: .public) tokens with \(context.tokenCount, privacy: .public); retrying with history \(limits.history, privacy: .public) and \(limits.elements, privacy: .public) elements"
+                    )
+                } catch let error as GeneratedContent.ParsingError where attempt == 1 {
+                    correction = Self.correction(for: error)
+                    Self.log.notice(
+                        "Step \(step.number, privacy: .public) produced malformed structured content; retrying once: \(String(describing: error), privacy: .public)"
+                    )
+                } catch let error as MLXDecisionSchemaError where attempt == 1 {
+                    correction = Self.correction(for: error)
+                    Self.log.notice(
+                        "Step \(step.number, privacy: .public) produced an invalid decision; retrying once: \(String(describing: error), privacy: .public)"
+                    )
+                }
+            }
+            guard let reply else {
+                throw MLXDecisionSchemaError.invalid("the correction retry produced no decision")
             }
             Self.log.info(
                 "Step \(step.number, privacy: .public) inference completed in \(Self.milliseconds(start.duration(to: clock.now)), privacy: .public) ms"
@@ -98,22 +116,52 @@ public struct MLXPilot: Pilot {
         to step: Step,
         image: CGImage,
         historyLimit: Int,
-        elementLimit: Int
+        elementLimit: Int,
+        correction: String?
     ) async throws -> Reply {
+        var brief = step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
+        if let correction {
+            brief += "\n\nYour previous decision was rejected. \(correction) Return one corrected decision now."
+        }
         let prompt = Prompt {
-            step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
+            brief
             Attachment(image).label("screenshot")
         }
         let session = LanguageModelSession(model: model, instructions: Self.instructions)
-        return try await session.respond(
+        let stepNumber = step.number
+        let watchdog = Task {
+            var previous = 0
+            for seconds in [5, 15, 30, 60, 120] {
+                do {
+                    try await Task.sleep(for: .seconds(seconds - previous))
+                } catch {
+                    return
+                }
+                previous = seconds
+                Self.log.notice(
+                    "Step \(stepNumber, privacy: .public) still awaiting MLX after \(seconds, privacy: .public)s; available memory \(Self.availableMemory, privacy: .public) bytes"
+                )
+            }
+        }
+        defer { watchdog.cancel() }
+        let response = try await session.respond(
             to: prompt,
-            generating: Reply.self,
-            options: GenerationOptions(temperature: 0.2, maximumResponseTokens: 64)
-        ).content
+            schema: MLXDecisionSchema.generationSchema,
+            options: GenerationOptions(
+                temperature: 0.2,
+                maximumResponseTokens: Self.maximumResponseTokens
+            )
+        )
+        return try MLXDecisionSchema.reply(from: response.content, on: step.screen)
     }
 
     static func contextRetryLimits(maxHistoryTurns: Int) -> (history: Int, elements: Int) {
         (history: min(max(0, maxHistoryTurns), 2), elements: retryElementLimit)
+    }
+
+    private static func correction(for error: any Error) -> String {
+        let detail = String(String(describing: error).prefix(180))
+        return "Fix this error: \(detail). Thought needs words; element ids must be visible; grid coordinates are 0...1000; required text and app names cannot be empty."
     }
 
     private static var availableMemory: Int {
