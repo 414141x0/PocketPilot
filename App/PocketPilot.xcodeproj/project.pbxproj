@@ -14,6 +14,7 @@
 		A10000000000000000000105 /* RunActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000205 /* RunActivity */; };
 		A10000000000000000000106 /* RunActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000206 /* RunActivity */; };
 		A10000000000000000000107 /* PocketPilotActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000302 /* PocketPilotActivity.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000108 /* MLXPilot in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000207 /* MLXPilot */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +61,7 @@
 				A10000000000000000000103 /* OpenAIPilot in Frameworks */,
 				A10000000000000000000104 /* SystemPilot in Frameworks */,
 				A10000000000000000000105 /* RunActivity in Frameworks */,
+				A10000000000000000000108 /* MLXPilot in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +121,7 @@
 				A10000000000000000000203 /* OpenAIPilot */,
 				A10000000000000000000204 /* SystemPilot */,
 				A10000000000000000000205 /* RunActivity */,
+				A10000000000000000000207 /* MLXPilot */,
 			);
 			productName = PocketPilot;
 			productReference = A10000000000000000000301 /* PocketPilot.app */;
@@ -284,6 +287,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = PocketPilot.entitlements;
 				DEVELOPMENT_TEAM = 38PF794TM3;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -311,6 +315,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = PocketPilot.entitlements;
 				DEVELOPMENT_TEAM = 38PF794TM3;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -433,6 +438,10 @@
 		A10000000000000000000206 /* RunActivity */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RunActivity;
+		};
+		A10000000000000000000207 /* MLXPilot */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MLXPilot;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
