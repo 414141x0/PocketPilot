@@ -17,7 +17,9 @@ import UIKit
 @MainActor
 final class BackgroundKeeper: NSObject {
     private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
-    private static let cardSize = CGSize(width: 320, height: 180)
+    // Small on purpose: the PiP window covers part of the screen the agent
+    // reads, so the card defaults compact and users stash it at an edge.
+    private static let cardSize = CGSize(width: 240, height: 135)
 
     /// Called when the user taps PiP's pause button. RunModel stops the run.
     var onPause: (() -> Void)?
@@ -137,8 +139,8 @@ final class BackgroundKeeper: NSObject {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return nil }
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: 1, y: -1)
+        // No flip: drawImage preserves CGImage row order, so row 0 lands in
+        // memory row 0 (the video frame's top). A y-flip here renders upside down.
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         var format: CMVideoFormatDescription?
@@ -167,20 +169,20 @@ final class BackgroundKeeper: NSObject {
                 return style
             }()
             (String(localized: "Step \(step)") as NSString).draw(
-                in: CGRect(x: 16, y: 10, width: 288, height: 36),
-                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 26), .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
+                in: CGRect(x: 12, y: 8, width: 216, height: 27),
+                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 20), .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
             )
             (action as NSString).draw(
-                in: CGRect(x: 16, y: 50, width: 288, height: 24),
-                withAttributes: [.font: UIFont.systemFont(ofSize: 17), .foregroundColor: UIColor.lightGray, .paragraphStyle: paragraph]
+                in: CGRect(x: 12, y: 38, width: 216, height: 18),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 13), .foregroundColor: UIColor.lightGray, .paragraphStyle: paragraph]
             )
             (thought as NSString).draw(
-                in: CGRect(x: 16, y: 78, width: 288, height: 44),
-                withAttributes: [.font: UIFont.systemFont(ofSize: 15), .foregroundColor: UIColor.gray, .paragraphStyle: paragraph]
+                in: CGRect(x: 12, y: 59, width: 216, height: 33),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.gray, .paragraphStyle: paragraph]
             )
             (String(localized: "⏸ to stop") as NSString).draw(
-                in: CGRect(x: 16, y: 148, width: 288, height: 22),
-                withAttributes: [.font: UIFont.systemFont(ofSize: 14), .foregroundColor: UIColor.darkGray, .paragraphStyle: paragraph]
+                in: CGRect(x: 12, y: 111, width: 216, height: 16),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.darkGray, .paragraphStyle: paragraph]
             )
         }
     }
