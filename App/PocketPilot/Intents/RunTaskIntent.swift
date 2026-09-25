@@ -25,7 +25,10 @@ struct RunTaskIntent: AppIntent {
             throw RunTaskError.alreadyRunning
         }
 
-        model.start(goal, pairing: pairing, pilot: setup.pilot)
+        guard let pilot = try? setup.makePilot() else {
+            throw RunTaskError.setupIncomplete
+        }
+        model.start(goal, pairing: pairing, pilot: pilot)
         return .result(dialog: "Starting task: \(goal)")
     }
 }
