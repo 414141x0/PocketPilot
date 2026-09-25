@@ -41,7 +41,7 @@ extension Screen {
                 id: merged.count + 1,
                 role: Element.Role(accessibilityRole: node.role ?? ""),
                 label: cleanLabel ?? text.label,
-                value: node.value,
+                value: node.value.map(Self.withoutHints),
                 frame: text.frame,
                 traits: Element.Traits(accessibilityTraits: node.traits)
             ))
@@ -88,6 +88,7 @@ extension Element.Role {
         // Most specific first: "Switch Button" is a toggle and "Tab Bar Button" a tab, not plain buttons.
         let rules: [(keywords: [String], role: Self)] = [
             (["switch", "toggle"], .toggle),
+            (["folder", "application", "app icon"], .button),
             (["tab"], .tab),
             (["field", "search"], .textField),
             (["slider", "adjustable"], .slider),

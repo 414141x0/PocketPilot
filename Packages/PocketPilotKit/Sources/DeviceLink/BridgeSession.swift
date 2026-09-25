@@ -68,7 +68,12 @@ final class BridgeSession: Sendable {
     func accessibilityNodes() async throws(DeviceError) -> [AccessibilityNode] {
         let json = try await bytes { pp_ax_snapshot(handle, $0, $1) }
         do {
-            return try JSONDecoder().decode([AccessibilityNode].self, from: json)
+            let nodes = try JSONDecoder().decode([AccessibilityNode].self, from: json)
+            #if DEBUG
+            let roles = Set(nodes.map { $0.role ?? "<none>" }).sorted()
+            log.info("accessibility roles: \(roles.joined(separator: " | "), privacy: .public)")
+            #endif
+            return nodes
         } catch {
             throw .service("Unreadable accessibility snapshot: \(error)")
         }

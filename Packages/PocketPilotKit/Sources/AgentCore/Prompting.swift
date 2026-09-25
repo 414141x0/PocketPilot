@@ -4,7 +4,7 @@
 /// language models than unit fractions. Use ``Point/init(grid:_:)`` to convert back.
 extension Screen {
     /// Unlocated controls cost tokens without a way to target them directly, so only a few are listed.
-    static let unlocatedLimit = 20
+    static let unlocatedLimit = 10
 
     /// A header line followed by one line per meaningful element, capped at `limit` elements:
     ///

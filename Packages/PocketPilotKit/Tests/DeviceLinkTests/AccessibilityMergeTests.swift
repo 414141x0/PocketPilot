@@ -98,3 +98,10 @@ private extension Screenshot {
         #expect(screen.elements.map(\.label) == ["TestFlight"])
     }
 }
+
+@Suite struct HomeScreenRoleTests {
+    @Test(arguments: ["Folder", "Application Icon", "App Icon"])
+    func homeScreenItemsAreButtons(_ role: String) {
+        #expect(Element.Role(accessibilityRole: role) == .button)
+    }
+}

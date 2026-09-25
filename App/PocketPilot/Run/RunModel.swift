@@ -78,8 +78,9 @@ final class RunModel {
             keeper.start()
             do {
                 let phone = try await connection.phone(pairing: pairing)
-                // Leave PocketPilot first: its own interface is never the target of a run.
-                let outcome = try await Agent(device: phone, pilot: pilot, preparation: [.press(.home)]).run(goal) { record($0) }
+                // Leave PocketPilot for the first Home Screen page: its own interface is never the target of a run,
+                // and a second Home press from the Home Screen always returns to page one.
+                let outcome = try await Agent(device: phone, pilot: pilot, preparation: [.press(.home), .press(.home)]).run(goal) { record($0) }
                 phase = .finished(outcome)
                 await endActivity(phase.conclusion ?? "")
             } catch where Task.isCancelled {
