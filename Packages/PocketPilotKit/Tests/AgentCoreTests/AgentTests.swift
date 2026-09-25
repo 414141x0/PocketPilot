@@ -57,6 +57,15 @@ import Testing
         #expect(await pilot.lastHistory.last?.failure?.hasPrefix("Skipped") == true)
     }
 
+    @Test func performsPreparationBeforeFirstObservation() async throws {
+        let device = FakeDevice()
+        let agent = Agent(device: device, pilot: ScriptedPilot(.done(summary: "ok")), settle: .zero, preparation: [.press(.home)])
+
+        _ = try await agent.run("Anything")
+
+        #expect(await device.gestures == [.press(.home)])
+    }
+
     @Test func flagsCircling() async throws {
         let pilot = ScriptedPilot(.scroll(.down), .scroll(.up), .scroll(.down), .scroll(.up), .giveUp(reason: "lost"))
         _ = try await Agent(device: AlternatingDevice(), pilot: pilot, settle: .zero).run("Find Settings")

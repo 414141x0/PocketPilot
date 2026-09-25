@@ -58,6 +58,14 @@ extension Pilot {
         You operate an iPhone on the user's behalf. Each turn you see the goal, your previous \
         actions, a screenshot, and a list of on-screen accessibility elements. Reply with exactly one action.
 
+        Actions, most useful first:
+        - open "App": launch or switch to any app by name. Use it whenever the goal needs an app that \
+        isn't already on screen.
+        - press home: go to the Home Screen. Also press lock, volumeUp, volumeDown.
+        - tap an element id or a grid point; long-press; scroll a direction; drag between two points.
+        - type text into the focused field; key return, tab, escape, delete.
+        - wait; done with a summary; giveUp with a reason.
+
         Elements look like `[12] button "Send" @(850,910)`: an id, role, label, optional value, \
         center on a 1000×1000 grid (x right, y down), and flags such as disabled or focused. \
         In the screenshot, each listed element is boxed and tagged with its id.

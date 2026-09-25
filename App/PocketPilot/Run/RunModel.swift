@@ -73,7 +73,8 @@ final class RunModel {
             keeper.start()
             do {
                 let phone = try await connection.phone(pairing: pairing)
-                let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
+                // Leave PocketPilot first: its own interface is never the target of a run.
+                let outcome = try await Agent(device: phone, pilot: pilot, preparation: [.press(.home)]).run(goal) { record($0) }
                 phase = .finished(outcome)
                 await endActivity(phase.conclusion ?? "")
             } catch where Task.isCancelled {

@@ -16,6 +16,8 @@ public struct Agent: Sendable {
     public var maxSteps: Int
     /// Time given to the UI to finish animating before the next observation.
     public var settle: Duration
+    /// Gestures performed before the first observation, for example leaving the app that started the run.
+    public var preparation: [Gesture]
 
     /// How many times the same screen may recur before the pilot is told it is looping.
     static let loopLimit = 3
@@ -23,11 +25,18 @@ public struct Agent: Sendable {
     /// The longest pause a pilot may request, so a model can't stall a run.
     static let longestWait = 30.0
 
-    public init(device: some Device, pilot: some Pilot, maxSteps: Int = 40, settle: Duration = .milliseconds(700)) {
+    public init(
+        device: some Device,
+        pilot: some Pilot,
+        maxSteps: Int = 40,
+        settle: Duration = .milliseconds(700),
+        preparation: [Gesture] = []
+    ) {
         self.device = device
         self.pilot = pilot
         self.maxSteps = maxSteps
         self.settle = settle
+        self.preparation = preparation
     }
 
     public enum Event: Sendable {
@@ -48,6 +57,10 @@ public struct Agent: Sendable {
         var visits: [[Element]: Int] = [:]
         var remembered: String?
         let apps = (try? await device.installedApps()) ?? []
+        for gesture in preparation {
+            try await device.perform(gesture)
+            try await Task.sleep(for: settle)
+        }
         while history.count < maxSteps {
             try Task.checkCancellation()
 
