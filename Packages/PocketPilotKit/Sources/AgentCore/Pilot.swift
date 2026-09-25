@@ -18,13 +18,23 @@ public struct Step: Sendable {
     public var remembered: String?
     /// Installed apps the goal names, which small models otherwise fail to reach with `open`.
     public var mentionedApps: [String]
+    /// Where the agent last navigated to, when it knows: the app it opened, or the Home Screen.
+    public var location: String?
 
-    public init(goal: String, screen: Screen, history: [Turn] = [], remembered: String? = nil, mentionedApps: [String] = []) {
+    public init(
+        goal: String,
+        screen: Screen,
+        history: [Turn] = [],
+        remembered: String? = nil,
+        mentionedApps: [String] = [],
+        location: String? = nil
+    ) {
         self.goal = goal
         self.screen = screen
         self.history = history
         self.remembered = remembered
         self.mentionedApps = mentionedApps
+        self.location = location
     }
 
     public var number: Int { history.count + 1 }

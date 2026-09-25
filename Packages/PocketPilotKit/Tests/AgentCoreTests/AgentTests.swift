@@ -140,12 +140,14 @@ private actor ScriptedPilot: Pilot {
     private var script: [Action]
     private let fallback: Action?
     private(set) var lastHistory: [Turn] = []
+    private(set) var locations: [String?] = []
 
     init(_ script: Action...) { self.script = script; fallback = nil }
     init(repeating action: Action) { script = []; fallback = action }
 
     func decide(_ step: Step) -> Decision {
         lastHistory = step.history
+        locations.append(step.location)
         let action = script.isEmpty ? fallback! : script.removeFirst()
         return Decision(action: action)
     }
@@ -386,4 +388,25 @@ private actor AlternatingDevice: Device {
         let step = Step(goal: "g", screen: Screen(screenshot: .blank(width: 1, height: 1)), mentionedApps: ["Settings"])
         #expect(step.brief().contains(#"Apps in the goal: "Settings" (installed; reach them with open)"#))
     }
+}
+
+@Suite struct LocationTests {
+    @Test func tracksOpenedAppAndHome() async throws {
+        let pilot = ScriptedPilot(.open(app: "settings"), .press(.home), .giveUp(reason: "x"))
+        let device = AppListingDevice()
+        _ = try await Agent(device: device, pilot: pilot, settle: .zero, preparation: [.press(.home)]).run("Open Settings")
+
+        #expect(await pilot.locations == ["Home Screen", "Settings", "Home Screen"])
+    }
+}
+
+private actor AppListingDevice: Device {
+    private var step = 0
+    func observe() throws(DeviceError) -> Screen {
+        step += 1
+        return Screen(screenshot: .blank(width: 1, height: 1),
+                      elements: [Element(id: 1, role: .text, label: "Screen \(step)", frame: .fullScreen)])
+    }
+    func perform(_ gesture: Gesture) throws(DeviceError) {}
+    func installedApps() throws(DeviceError) -> [InstalledApp] { [InstalledApp(name: "Settings", bundleID: "com.apple.Preferences")] }
 }

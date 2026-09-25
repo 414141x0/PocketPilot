@@ -114,16 +114,18 @@ struct Reply: Sendable {
     }
 }
 
+/// Navigation comes first: small models lean toward earlier cases under constrained decoding,
+/// and reaching the right app is the step they most often skip.
 @Generable enum Choice: Sendable {
+    case open(app: String)
+    case press(button: Key)
     case tap(element: Int)
     case tapPoint(x: Int, y: Int)
     case longPress(element: Int)
     case scroll(direction: Heading, element: Int?)
     case drag(fromX: Int, fromY: Int, toX: Int, toY: Int)
     case type(text: String)
-    case press(button: Key)
     case key(name: KeyName)
-    case open(app: String)
     case wait(seconds: Double)
     case done(summary: String)
     case giveUp(reason: String)

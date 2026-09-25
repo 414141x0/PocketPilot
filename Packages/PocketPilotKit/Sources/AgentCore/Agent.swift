@@ -58,6 +58,7 @@ public struct Agent: Sendable {
         var remembered: String?
         let apps = (try? await device.installedApps()) ?? []
         let mentionedApps = apps.named(in: goal)
+        var location = preparation.contains(.press(.home)) ? "Home Screen" : nil
         for gesture in preparation {
             try await device.perform(gesture)
             try await Task.sleep(for: settle)
@@ -82,7 +83,7 @@ public struct Agent: Sendable {
                 }
             }
 
-            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps)
+            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps, location: location)
             onEvent(.observed(screen, step: step.number))
 
             let decision = try await pilot.decide(step)
@@ -102,6 +103,9 @@ public struct Agent: Sendable {
             }
             if let failure = turn.failure {
                 onEvent(.failed(decision.action, reason: failure))
+            }
+            if turn.failure == nil, let destination = decision.action.destination(in: apps) {
+                location = destination
             }
             history.append(turn)
             try await Task.sleep(for: settle)
@@ -125,6 +129,15 @@ public struct Agent: Sendable {
 }
 
 extension Action {
+    /// Where performing this action lands, when that is certain: the opened app or the Home Screen.
+    func destination(in apps: [InstalledApp]) -> String? {
+        switch self {
+        case .open(let query): apps.first { $0.name.lowercased() == query.lowercased() || $0.bundleID == query }?.name ?? query
+        case .press(.home): "Home Screen"
+        default: nil
+        }
+    }
+
     /// Whether performing this action should visibly change the screen.
     var expectsChange: Bool {
         switch self {
