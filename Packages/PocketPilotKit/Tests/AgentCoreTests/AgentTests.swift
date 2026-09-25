@@ -420,3 +420,23 @@ private actor AppListingDevice: Device {
     func perform(_ gesture: Gesture) throws(DeviceError) {}
     func installedApps() throws(DeviceError) -> [InstalledApp] { [InstalledApp(name: "Settings", bundleID: "com.apple.Preferences")] }
 }
+
+@Suite struct TypedTextConfirmationTests {
+    @Test func confirmsTypedTextOnNextScreen() async throws {
+        let pilot = ScriptedPilot(.type("eating dinner"), .giveUp(reason: "x"))
+        _ = try await Agent(device: TypingDevice(), pilot: pilot, settle: .zero).run("Search")
+
+        #expect(await pilot.lastHistory.first?.confirmation == "now on screen: [1]")
+    }
+}
+
+private actor TypingDevice: Device {
+    private var typed = ""
+    func observe() throws(DeviceError) -> Screen {
+        Screen(screenshot: .blank(width: 1, height: 1),
+               elements: [Element(id: 1, role: .textField, label: typed.isEmpty ? "Search" : "• \(typed.capitalized)", frame: .fullScreen)])
+    }
+    func perform(_ gesture: Gesture) throws(DeviceError) {
+        if case .type(let text) = gesture { typed = text }
+    }
+}

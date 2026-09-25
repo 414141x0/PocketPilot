@@ -88,7 +88,7 @@ final class RunModel {
                 }
                 // Hide the PiP status card before the first observation so the pilot never sees it.
                 await stashPiPCard(phone: phone)
-                let outcome = try await Agent(device: phone, pilot: pilot, startsAt: "Home Screen").run(goal) { record($0) }
+                let outcome = try await Agent(device: PiPShieldedDevice(base: phone), pilot: pilot, startsAt: "Home Screen").run(goal) { record($0) }
                 phase = .finished(outcome)
                 await endActivity(phase.conclusion ?? "")
             } catch where Task.isCancelled {

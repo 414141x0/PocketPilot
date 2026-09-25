@@ -66,9 +66,12 @@ public struct Turn: Sendable, Hashable {
     public var decision: Decision
     /// Why the action could not be performed, fed back so the pilot can recover.
     public var failure: String?
+    /// What the next screen confirmed about the action, such as typed text now being visible.
+    public var confirmation: String?
 
-    public init(decision: Decision, failure: String? = nil) {
+    public init(decision: Decision, failure: String? = nil, confirmation: String? = nil) {
         self.decision = decision
         self.failure = failure
+        self.confirmation = confirmation
     }
 }

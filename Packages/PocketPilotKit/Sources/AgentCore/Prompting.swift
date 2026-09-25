@@ -121,6 +121,7 @@ extension Step {
         guard !recent.isEmpty else { return "(none yet)" }
         return zip(recent.indices, recent).map { index, turn in
             var line = "\(index + 1). \(turn.decision.action)"
+            if let confirmation = turn.confirmation { line += " (\(confirmation))" }
             if !turn.decision.thought.isEmpty { line += " — \(turn.decision.thought.truncated(to: 120))" }
             if let failure = turn.failure { line += " — failed: \(failure)" }
             return line

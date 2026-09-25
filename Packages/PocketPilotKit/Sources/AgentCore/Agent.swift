@@ -1,3 +1,5 @@
+import Foundation
+
 /// Drives a ``Device`` toward a goal by alternating observation, decision, and action.
 ///
 /// ```swift
@@ -79,6 +81,10 @@ public struct Agent: Sendable {
                 onEvent(.failed(history[last].decision.action, reason: reason))
             }
             previous = screen
+            if let last = history.indices.last, case .type(let text) = history[last].decision.action,
+               let shown = screen.element(showing: text) {
+                history[last].confirmation = "now on screen: [\(shown.id)]"
+            }
             if !screen.elements.isEmpty {
                 visits[screen.elements, default: 0] += 1
                 if visits[screen.elements] == Self.loopLimit, let last = history.indices.last, history[last].failure == nil {
@@ -158,6 +164,15 @@ extension Screen {
     /// Whether nothing the pilot can see has changed since `earlier`. Screens without elements never compare equal.
     func looksUnchanged(from earlier: Screen) -> Bool {
         !elements.isEmpty && elements == earlier.elements
+    }
+}
+
+extension Screen {
+    /// The element whose text includes `text`, ignoring case and surrounding whitespace.
+    func element(showing text: String) -> Element? {
+        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        return elements.first { ($0.label + " " + ($0.value ?? "")).lowercased().contains(needle) }
     }
 }
 
