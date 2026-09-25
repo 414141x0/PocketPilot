@@ -1,6 +1,7 @@
 import AgentCore
 import CoreGraphics
 import Foundation
+import MLXPilot
 import SwiftUI
 
 struct RunView: View {
@@ -27,6 +28,7 @@ struct RunView: View {
                     SetupRequiredEmptyState(
                         hasPairing: setup.pairing != nil,
                         hasAPIKey: !setup.openAIKey.isEmpty,
+                        hasMLXModel: setup.mlxModel.isReady,
                         brain: setup.brain,
                         onOpenSetup: { isShowingSetup = true }
                     )
@@ -40,8 +42,8 @@ struct RunView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 GoalField(goal: $goal, isRunning: model.isRunning, isEnabled: setup.isReady) {
-                    if let pairing = setup.pairing {
-                        model.start(goal, pairing: pairing, pilot: setup.pilot)
+                    if let pairing = setup.pairing, let pilot = try? setup.makePilot() {
+                        model.start(goal, pairing: pairing, pilot: pilot)
                     }
                 } stop: {
                     model.stop()
@@ -90,7 +92,9 @@ struct RunView: View {
                     await ModelProbe.run(pairing: pairing)
                 }
                 if let goal = ProcessInfo.processInfo.environment["POCKETPILOT_GOAL"], let pairing = setup.pairing {
-                    model.start(goal, pairing: pairing, pilot: setup.pilot)
+                    if let pilot = try? setup.makePilot() {
+                        model.start(goal, pairing: pairing, pilot: pilot)
+                    }
                 }
                 #endif
             }
@@ -188,6 +192,7 @@ private struct ConclusionRow: View {
 private struct SetupRequiredEmptyState: View {
     let hasPairing: Bool
     let hasAPIKey: Bool
+    let hasMLXModel: Bool
     let brain: Setup.Brain
     let onOpenSetup: () -> Void
 
@@ -203,6 +208,8 @@ private struct SetupRequiredEmptyState: View {
                         .foregroundStyle(.secondary)
                 } else if brain == .openAI && !hasAPIKey {
                     Text("Enter your OpenAI API key in Setup to use the cloud model.")
+                } else if brain == .localMLX && !hasMLXModel {
+                    Text("Download the Local MLX model in Setup before starting a run.")
                 }
             }
         } actions: {
