@@ -144,9 +144,11 @@ extension Action {
     }
 
     /// Whether performing this action should visibly change the screen.
+    /// Typing is excluded: text entered into a field often isn't visible to OCR or accessibility,
+    /// and reporting "no change" makes pilots type the same text again.
     var expectsChange: Bool {
         switch self {
-        case .wait, .done, .giveUp: false
+        case .wait, .done, .giveUp, .type: false
         default: true
         }
     }
@@ -162,6 +164,9 @@ extension Screen {
 extension [Turn] {
     /// Why `action` should be skipped rather than tried a third time in a row.
     func repeatedFailure(of action: Action) -> String? {
+        if case .type = action, last?.decision.action == action {
+            return "Skipped: this text was already typed. Check the field; continue with key return or the next step."
+        }
         guard count >= 2, suffix(2).allSatisfy({ $0.decision.action == action }) else { return nil }
         return "Skipped: this was already tried twice in a row. Choose something different, or give up."
     }

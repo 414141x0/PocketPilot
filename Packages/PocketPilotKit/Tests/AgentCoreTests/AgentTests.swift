@@ -50,10 +50,10 @@ import Testing
 
     @Test func skipsThirdIdenticalAction() async throws {
         let device = FakeDevice(changesEachStep: true)
-        let pilot = ScriptedPilot(.type("a"), .type("a"), .type("a"), .giveUp(reason: "stuck"))
+        let pilot = ScriptedPilot(.key(.tab), .key(.tab), .key(.tab), .giveUp(reason: "stuck"))
         _ = try await Agent(device: device, pilot: pilot, settle: .zero).run("Type")
 
-        #expect(await device.gestures == [.type("a"), .type("a")])
+        #expect(await device.gestures == [.key(.tab), .key(.tab)])
         #expect(await pilot.lastHistory.last?.failure?.hasPrefix("Skipped") == true)
     }
 
@@ -64,6 +64,16 @@ import Testing
         _ = try await agent.run("Anything")
 
         #expect(await device.gestures == [.press(.home)])
+    }
+
+    @Test func typesTextOnlyOnce() async throws {
+        let device = FakeDevice()
+        let pilot = ScriptedPilot(.type("hello"), .type("hello"), .done(summary: "typed"))
+        _ = try await Agent(device: device, pilot: pilot, settle: .zero).run("Type hello")
+
+        #expect(await device.gestures == [.type("hello")])
+        #expect(await pilot.lastHistory.first?.failure == nil, "Typing is never reported as 'screen did not change'")
+        #expect(await pilot.lastHistory.last?.failure?.hasPrefix("Skipped: this text was already typed") == true)
     }
 
     @Test func flagsCircling() async throws {
