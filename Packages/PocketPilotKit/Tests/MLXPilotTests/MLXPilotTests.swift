@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import FoundationModels
 import Testing
@@ -25,6 +26,54 @@ struct MLXPilotTests {
         #expect(limits.history == 2)
         #expect(limits.elements == 30)
         #expect(MLXPilot.contextRetryLimits(maxHistoryTurns: 1).history == 1)
+    }
+
+    @Test func transportSchemaBoundsAllNumericTargets() throws {
+        let data = try JSONEncoder().encode(MLXDecisionSchema.generationSchema)
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(json.contains(#""minimum":0"#))
+        #expect(json.contains(#""maximum":1000"#))
+        #expect(json.contains(#""minimum":1"#))
+        #expect(json.contains(#""maximum":300"#))
+        #expect(json.contains(#""minimum":0.25"#))
+        #expect(json.contains(#""maximum":10"#))
+    }
+
+    @Test func transportSchemaConvertsBackToSharedReply() throws {
+        let content = try GeneratedContent(
+            json: #"{"thought":"Did: at Home. Expect: Settings opens. Next: open Settings.","action":{"type":"open","app":"Settings"}}"#
+        )
+        let reply = try MLXDecisionSchema.reply(from: content, on: emptyScreen())
+        #expect(
+            MLXPilot.mapDecision(reply)
+                == Decision(
+                    thought: "Did: at Home. Expect: Settings opens. Next: open Settings.",
+                    action: .open(app: "Settings")
+                )
+        )
+    }
+
+    @Test func transportSchemaRejectsMeaninglessAndUnsafeContent() throws {
+        let numericThought = try GeneratedContent(
+            json: #"{"thought":"1","action":{"type":"press","button":"home"}}"#
+        )
+        #expect(throws: MLXDecisionSchemaError.self) {
+            _ = try MLXDecisionSchema.reply(from: numericThought, on: emptyScreen())
+        }
+
+        let absentElement = try GeneratedContent(
+            json: #"{"thought":"Tap the visible control","action":{"type":"tap","element":299}}"#
+        )
+        #expect(throws: MLXDecisionSchemaError.self) {
+            _ = try MLXDecisionSchema.reply(from: absentElement, on: emptyScreen())
+        }
+
+        let emptyApp = try GeneratedContent(
+            json: #"{"thought":"Open the requested app","action":{"type":"open","app":"  "}}"#
+        )
+        #expect(throws: MLXDecisionSchemaError.self) {
+            _ = try MLXDecisionSchema.reply(from: emptyApp, on: emptyScreen())
+        }
     }
 
     @Test func initDoesNotStartANetworkDownload() throws {
@@ -83,6 +132,19 @@ struct MLXPilotTests {
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appending(path: "MLXPilotTests-(UUID().uuidString)", directoryHint: .isDirectory)
+    }
+
+    private func emptyScreen() -> Screen {
+        let context = CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        return Screen(screenshot: Screenshot(image: context.makeImage()!))
     }
 
     private func makeCompleteSnapshot(at directory: URL) throws {
