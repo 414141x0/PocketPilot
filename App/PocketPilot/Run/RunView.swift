@@ -161,9 +161,6 @@ private struct ActiveStepCard: View {
                 Text("Observing screen & deciding action…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("Tip: stash the PiP card at a screen edge — it keeps the run alive while tucked away.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
             Spacer()
         }
