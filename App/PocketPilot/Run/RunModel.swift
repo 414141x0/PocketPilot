@@ -130,15 +130,25 @@ final class RunModel {
         }
         do {
             // A fast flick stashes; a slow drag just moves the card. Retry once, faster.
+            // PiP reports active before its window finishes animating in, so wait for the card to appear.
+            var card: Element?
+            for _ in 0..<6 where !Task.isCancelled {
+                card = try await phone.observe().elements.first(where: Self.isPiPCard)
+                if card != nil { break }
+                try await Task.sleep(for: .milliseconds(500))
+            }
             for (attempt, duration) in [Duration.milliseconds(120), .milliseconds(60)].enumerated() {
-                let screen = try await phone.observe()
-                guard let card = screen.elements.first(where: Self.isPiPCard) else {
-                    Self.log.info("\(attempt == 0 ? "pip stash: card not visible, nothing to hide" : "pip stash succeeded", privacy: .public)")
+                if attempt > 0 {
+                    card = try await phone.observe().elements.first(where: Self.isPiPCard)
+                }
+                guard let card else {
+                    Self.log.info("\(attempt == 0 ? "pip stash: card never appeared" : "pip stash succeeded", privacy: .public)")
                     return
                 }
-                let center = card.frame.center
-                try await phone.perform(.swipe(from: center, to: Point(x: 0, y: center.y), duration: duration))
-                try await Task.sleep(for: .milliseconds(500))
+                // The window spans most of the width; a long, fast flick from its middle stashes it.
+                let start = Point(x: max(card.frame.center.x, 0.5), y: card.frame.center.y)
+                try await phone.perform(.swipe(from: start, to: Point(x: 0, y: start.y), duration: duration))
+                try await Task.sleep(for: .milliseconds(600))
             }
             let screen = try await phone.observe()
             if screen.elements.contains(where: Self.isPiPCard) {
