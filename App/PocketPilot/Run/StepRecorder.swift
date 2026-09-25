@@ -5,10 +5,10 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// Saves what each pilot is shown, the text brief and the marked screenshot, to
-/// tmp/steps/ in the app container, for inspecting prompt quality. Debug builds only.
-/// Enable by launching with POCKETPILOT_RECORD=1.
+/// tmp/steps/ in the app container, for inspecting prompt quality. Debug builds only;
+/// on by default so runs started from the UI are recorded too (POCKETPILOT_RECORD=0 disables).
 nonisolated enum StepRecorder {
-    static let isEnabled = ProcessInfo.processInfo.environment["POCKETPILOT_RECORD"] != nil
+    static let isEnabled = ProcessInfo.processInfo.environment["POCKETPILOT_RECORD"] != "0"
     static let directory = FileManager.default.temporaryDirectory.appending(path: "steps")
 
     static func reset() {
