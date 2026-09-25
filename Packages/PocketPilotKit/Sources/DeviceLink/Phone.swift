@@ -32,6 +32,10 @@ public struct Phone: Device {
         try await session.installedApps()
     }
 
+    public func frontmostApp() async throws(DeviceError) -> FrontmostApp? {
+        try await session.frontmostApp()
+    }
+
     public func perform(_ gesture: Gesture) async throws(DeviceError) {
         switch gesture {
         case .tap(let point): try await session.tap(point)

@@ -277,11 +277,13 @@ enum Command {
     },
     ListApps(BytesCompletion),
     ScreenSize(SizeCompletion),
+    FrontmostApp(BytesCompletion),
     AxSnapshot(BytesCompletion),
     Shutdown,
 }
 
 enum AxCommand {
+    FrontmostApp(BytesCompletion),
     Snapshot(BytesCompletion),
     Shutdown(oneshot::Sender<()>),
 }
@@ -613,6 +615,17 @@ impl ConnectedSession {
                 completion.finish(result);
             }
             Command::ScreenSize(completion) => completion.finish(self.size().await),
+            Command::FrontmostApp(completion) => {
+                if let Err(error) = self.ax_commands.send(AxCommand::FrontmostApp(completion)) {
+                    let AxCommand::FrontmostApp(completion) = error.0 else {
+                        unreachable!("the failed command was a frontmost-app query");
+                    };
+                    completion.finish(Err(BridgeError::new(
+                        PP_Error::SessionClosed,
+                        "accessibility task is closed",
+                    )));
+                }
+            }
             Command::AxSnapshot(completion) => {
                 if let Err(error) = self.ax_commands.send(AxCommand::Snapshot(completion)) {
                     let AxCommand::Snapshot(completion) = error.0 else {
@@ -647,6 +660,19 @@ async fn run_ax_session(
 ) {
     while let Some(command) = commands.recv().await {
         match command {
+            AxCommand::FrontmostApp(completion) => {
+                let result = match &mut ax {
+                    Ok(ax) => ax
+                        .frontmost_app()
+                        .await
+                        .map_err(|error| BridgeError::new(PP_Error::Service, error)),
+                    Err(error) => Err(BridgeError::new(
+                        PP_Error::Service,
+                        format!("accessibility service unavailable: {error}"),
+                    )),
+                };
+                completion.finish(result);
+            }
             AxCommand::Snapshot(completion) => {
                 let result = match &mut ax {
                     Ok(ax) => ax
@@ -707,6 +733,7 @@ fn finish_unavailable(command: Command, detail: &str) {
     match command {
         Command::Screenshot(completion)
         | Command::ListApps(completion)
+        | Command::FrontmostApp(completion)
         | Command::AxSnapshot(completion) => completion.finish(Err(error())),
         Command::ScreenSize(completion) => completion.finish(Err(error())),
         Command::Tap { completion, .. }
@@ -1492,6 +1519,23 @@ pub unsafe extern "C" fn pp_screen_size(
     send_command(
         session,
         Command::ScreenSize(size_completion(callback, context)),
+    );
+}
+
+/// Returns the frontmost application as a UTF-8 JSON object with `name` and `bundle_id`.
+///
+/// # Safety
+///
+/// `session` must remain live until this call returns. Callback state must outlive the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pp_frontmost_app(
+    session: *mut PP_Session,
+    callback: PP_BytesCallback,
+    context: *mut c_void,
+) {
+    send_command(
+        session,
+        Command::FrontmostApp(bytes_completion(callback, context)),
     );
 }
 

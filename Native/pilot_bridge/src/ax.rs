@@ -18,6 +18,12 @@ pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+struct FrontmostApp {
+    name: String,
+    bundle_id: String,
+}
+
 #[derive(Debug, Serialize)]
 struct Element {
     id: String,
@@ -236,6 +242,21 @@ impl AxClient {
 
         serde_json::to_vec(&builder.elements)
             .map_err(|error| format!("AX JSON serialization failed: {error}"))
+    }
+
+    pub(crate) async fn frontmost_app(&mut self) -> Result<Vec<u8>, String> {
+        let pid_response = self.request("deviceFrontmostAppPid", vec![]).await?;
+        let pid = first_integer(&pid_response)
+            .filter(|pid| *pid > 0)
+            .ok_or_else(|| {
+                format!("frontmost-app response carried no valid PID: {pid_response:?}")
+            })?;
+        let applications = self.request("deviceRunningApplications", vec![]).await?;
+        let app = find_application(&applications, pid).ok_or_else(|| {
+            format!("running-app response had no name and bundle identifier for PID {pid}")
+        })?;
+        serde_json::to_vec(&app)
+            .map_err(|error| format!("frontmost app JSON serialization failed: {error}"))
     }
 
     async fn invoke(&mut self, selector: &str, arguments: Vec<AuxValue>) -> Result<(), String> {
@@ -459,6 +480,104 @@ fn direct_bool_field(value: &Value, key: &str) -> Option<bool> {
     scalar(direct_field(value, key)?).and_then(Value::as_boolean)
 }
 
+fn first_integer(value: &Value) -> Option<i64> {
+    let value = scalar(value)?;
+    value
+        .as_signed_integer()
+        .or_else(|| {
+            value
+                .as_unsigned_integer()
+                .and_then(|value| i64::try_from(value).ok())
+        })
+        .or_else(|| match value {
+            Value::Dictionary(dictionary) => dictionary.values().find_map(first_integer),
+            Value::Array(array) => array.iter().find_map(first_integer),
+            _ => None,
+        })
+}
+
+fn find_application(value: &Value, pid: i64) -> Option<FrontmostApp> {
+    let value = scalar(value)?;
+    match value {
+        Value::Dictionary(dictionary) => {
+            if dictionary
+                .iter()
+                .any(|(key, value)| is_pid_key(key) && first_integer(value) == Some(pid))
+                && let Some(app) = application_identity(value)
+            {
+                return Some(app);
+            }
+            if let Some(record) = dictionary.get(&pid.to_string())
+                && let Some(app) = application_identity(record)
+            {
+                return Some(app);
+            }
+            dictionary
+                .values()
+                .find_map(|value| find_application(value, pid))
+        }
+        Value::Array(array) => array.iter().find_map(|value| find_application(value, pid)),
+        _ => None,
+    }
+}
+
+fn application_identity(value: &Value) -> Option<FrontmostApp> {
+    let name = find_named_string(value, is_name_key)?;
+    let bundle_id = find_named_string(value, is_bundle_key)?;
+    (!name.is_empty() && !bundle_id.is_empty()).then_some(FrontmostApp { name, bundle_id })
+}
+
+fn find_named_string(value: &Value, matches: fn(&str) -> bool) -> Option<String> {
+    let value = scalar(value)?;
+    match value {
+        Value::Dictionary(dictionary) => {
+            for (key, value) in dictionary {
+                if matches(key)
+                    && let Some(value) = scalar(value).and_then(Value::as_string)
+                    && !value.is_empty()
+                {
+                    return Some(value.to_owned());
+                }
+            }
+            dictionary
+                .values()
+                .find_map(|value| find_named_string(value, matches))
+        }
+        Value::Array(array) => array
+            .iter()
+            .find_map(|value| find_named_string(value, matches)),
+        _ => None,
+    }
+}
+
+fn normalized_key(key: &str) -> String {
+    key.chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn is_pid_key(key: &str) -> bool {
+    matches!(
+        normalized_key(key).as_str(),
+        "pid" | "processid" | "processidentifier" | "processidentifiervaluev1"
+    )
+}
+
+fn is_name_key(key: &str) -> bool {
+    matches!(
+        normalized_key(key).as_str(),
+        "name" | "displayname" | "localizedname" | "applicationname" | "namevaluev1"
+    )
+}
+
+fn is_bundle_key(key: &str) -> bool {
+    matches!(
+        normalized_key(key).as_str(),
+        "bundleid" | "bundleidentifier" | "bundleidentifiervaluev1"
+    )
+}
+
 fn token_hex(value: &Value) -> Option<String> {
     find_field(value, "PlatformElementValue_v1")
         .and_then(scalar)
@@ -506,6 +625,68 @@ mod tests {
         let mut builder = SnapshotBuilder::default();
         builder.merge_tree(&value, 0);
         assert_eq!(builder.elements.len(), MAX_DEPTH + 1);
+    }
+
+    #[test]
+    fn finds_frontmost_app_in_archived_running_applications() {
+        let applications = Value::Array(vec![
+            archived_app(83, "SpringBoard", "com.apple.springboard"),
+            archived_app(501, "Settings", "com.apple.Preferences"),
+        ]);
+
+        assert_eq!(
+            find_application(&applications, 501),
+            Some(FrontmostApp {
+                name: "Settings".to_string(),
+                bundle_id: "com.apple.Preferences".to_string(),
+            })
+        );
+        assert_eq!(find_application(&applications, 999), None);
+    }
+
+    #[test]
+    fn finds_frontmost_app_in_pid_keyed_dictionary() {
+        let applications = Value::Dictionary(Dictionary::from_iter([(
+            "501".to_string(),
+            Value::Dictionary(Dictionary::from_iter([
+                (
+                    "displayName".to_string(),
+                    Value::String("Settings".to_string()),
+                ),
+                (
+                    "bundleIdentifier".to_string(),
+                    Value::String("com.apple.Preferences".to_string()),
+                ),
+            ])),
+        )]));
+
+        assert_eq!(
+            find_application(&applications, 501).unwrap().name,
+            "Settings"
+        );
+    }
+
+    fn archived_app(pid: i64, name: &str, bundle_id: &str) -> Value {
+        Value::Dictionary(Dictionary::from_iter([
+            (
+                "ObjectType".to_string(),
+                Value::String("AXAuditApplication_v1".to_string()),
+            ),
+            (
+                "Value".to_string(),
+                Value::Dictionary(Dictionary::from_iter([(
+                    "Value".to_string(),
+                    Value::Dictionary(Dictionary::from_iter([
+                        ("pid".to_string(), Value::Integer(pid.into())),
+                        ("name".to_string(), Value::String(name.to_string())),
+                        (
+                            "bundleIdentifier".to_string(),
+                            Value::String(bundle_id.to_string()),
+                        ),
+                    ])),
+                )])),
+            ),
+        ]))
     }
 
     fn node(

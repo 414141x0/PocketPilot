@@ -16,6 +16,22 @@ public struct InstalledApp: Sendable, Hashable, Decodable {
     }
 }
 
+/// The application currently owning the device's foreground UI.
+public struct FrontmostApp: Sendable, Hashable, Decodable {
+    public var name: String
+    public var bundleID: String
+
+    public init(name: String, bundleID: String) {
+        self.name = name
+        self.bundleID = bundleID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case bundleID = "bundle_id"
+    }
+}
+
 extension [InstalledApp] {
     /// Names of apps that appear as whole words in `text`, longest first so "App Store" wins over "App".
     func named(in text: String) -> [String] {

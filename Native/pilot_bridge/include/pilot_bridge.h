@@ -233,6 +233,15 @@ void pp_list_apps(struct PP_Session *session, PP_BytesCallback callback, void *c
 void pp_screen_size(struct PP_Session *session, PP_SizeCallback callback, void *context);
 
 /**
+ * Returns the frontmost application as a UTF-8 JSON object with `name` and `bundle_id`.
+ *
+ * # Safety
+ *
+ * `session` must remain live until this call returns. Callback state must outlive the callback.
+ */
+void pp_frontmost_app(struct PP_Session *session, PP_BytesCallback callback, void *context);
+
+/**
  * Returns a JSON accessibility hierarchy snapshot.
  *
  * The top-level JSON value is an array of nodes. Each node includes `id`, `token_hex`, `role`,

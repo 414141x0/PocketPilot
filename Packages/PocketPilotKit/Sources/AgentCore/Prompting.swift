@@ -86,7 +86,7 @@ extension Pilot {
         should change> Next: <this action and its target>". Each part at most 15 words.
         - End your thought with "Keep: <facts>" to remember short facts for later steps; they return as Remembered.
         - "The screen did not change" means your last action had no effect; choose a different target.
-        - "You are in" names the app you are already in; don't open it again. Change nothing the goal \
+        - "App" names the app you are already in; don't open it again. Change nothing the goal \
         doesn't ask for: don't flip switches, choose options, or delete anything unless the goal requires it.
         """
     }
@@ -98,7 +98,7 @@ extension Step {
     /// Smaller limits suit models with small context windows.
     public func brief(historyLimit: Int = 20, elementLimit: Int = 200) -> String {
         var head = "Goal: \(goal)"
-        if let location { head += "\n\nYou are in: \(location)" }
+        if let app { head += "\n\nApp: \(app.name) (\(app.bundleID))" }
         if !mentionedApps.isEmpty {
             head += "\n\nApps in the goal: " + mentionedApps.map { "\"\($0)\"" }.joined(separator: ", ")
                 + " (installed; reach them with open)"
