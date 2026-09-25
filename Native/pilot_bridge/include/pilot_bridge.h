@@ -172,6 +172,21 @@ void pp_press_key(struct PP_Session *session,
                   void *context);
 
 /**
+ * Presses and releases an allow-listed USB HID modifier/key chord.
+ *
+ * The only supported chord is Left Command (`0xE3`) + A (`0x04`).
+ *
+ * # Safety
+ *
+ * `session` must remain live until this call returns. Callback state must outlive the callback.
+ */
+void pp_press_chord(struct PP_Session *session,
+                    uint64_t modifier,
+                    uint64_t usage,
+                    PP_CompletionCallback callback,
+                    void *context);
+
+/**
  * Presses and releases a supported hardware button.
  *
  * # Safety

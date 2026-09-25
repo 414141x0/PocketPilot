@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, oneshot};
 const CLIENT_SUPPORTED_FEATURES: u64 = 140;
 const KEY_LEFT_SHIFT: u64 = 0xE1;
 const KEY_LEFT_COMMAND: u64 = 0xE3;
+const KEY_A: u64 = 0x04;
 const KEY_V: u64 = 0x19;
 const CLIPBOARD_REPLACED_NOTE: &str =
     "The device clipboard was replaced; iOS may ask to allow pasting.";
@@ -262,6 +263,11 @@ enum Command {
         completion: Completion,
     },
     PressKey {
+        usage: u64,
+        completion: Completion,
+    },
+    PressChord {
+        modifier: u64,
         usage: u64,
         completion: Completion,
     },
@@ -572,6 +578,13 @@ impl ConnectedSession {
             Command::PressKey { usage, completion } => {
                 completion.finish(press_key(&mut self.keyboard, usage).await);
             }
+            Command::PressChord {
+                modifier,
+                usage,
+                completion,
+            } => {
+                completion.finish(send_chord(&mut self.keyboard, modifier, usage).await);
+            }
             Command::LaunchApp {
                 bundle_id,
                 completion,
@@ -702,6 +715,7 @@ fn finish_unavailable(command: Command, detail: &str) {
         | Command::TypeText { completion, .. }
         | Command::Press { completion, .. }
         | Command::PressKey { completion, .. }
+        | Command::PressChord { completion, .. }
         | Command::LaunchApp { completion, .. } => completion.finish(Err(error())),
         Command::Shutdown => {}
     }
@@ -976,6 +990,10 @@ async fn press_key(
 
 fn is_supported_key_usage(usage: u64) -> bool {
     matches!(usage, 0x28..=0x2B)
+}
+
+fn is_supported_chord(modifier: u64, usage: u64) -> bool {
+    modifier == KEY_LEFT_COMMAND && usage == KEY_A
 }
 
 fn validate_normalized(value: f64, name: &str) -> Result<(), BridgeError> {
@@ -1339,6 +1357,39 @@ pub unsafe extern "C" fn pp_press_key(
     send_command(session, Command::PressKey { usage, completion });
 }
 
+/// Presses and releases an allow-listed USB HID modifier/key chord.
+///
+/// The only supported chord is Left Command (`0xE3`) + A (`0x04`).
+///
+/// # Safety
+///
+/// `session` must remain live until this call returns. Callback state must outlive the callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pp_press_chord(
+    session: *mut PP_Session,
+    modifier: u64,
+    usage: u64,
+    callback: PP_CompletionCallback,
+    context: *mut c_void,
+) {
+    let completion = completion(callback, context);
+    if !is_supported_chord(modifier, usage) {
+        completion.finish(Err(BridgeError::new(
+            PP_Error::InvalidArgument,
+            format!("unsupported keyboard chord 0x{modifier:02X}+0x{usage:02X}"),
+        )));
+        return;
+    }
+    send_command(
+        session,
+        Command::PressChord {
+            modifier,
+            usage,
+            completion,
+        },
+    );
+}
+
 /// Presses and releases a supported hardware button.
 ///
 /// # Safety
@@ -1599,6 +1650,41 @@ mod tests {
         }
         assert!(!is_supported_key_usage(KEY_LEFT_COMMAND));
         assert!(!is_supported_key_usage(KEY_V));
+    }
+
+    #[test]
+    fn limits_public_chords_to_command_a() {
+        assert!(is_supported_chord(KEY_LEFT_COMMAND, KEY_A));
+        for (modifier, usage) in [
+            (KEY_LEFT_COMMAND, KEY_V),
+            (KEY_LEFT_SHIFT, KEY_A),
+            (KEY_LEFT_COMMAND, 0x05),
+        ] {
+            assert!(!is_supported_chord(modifier, usage));
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_chords_synchronously() {
+        let mut capture = CallbackCapture {
+            error: None,
+            message: None,
+        };
+        unsafe {
+            pp_press_chord(
+                ptr::null_mut(),
+                KEY_LEFT_COMMAND,
+                KEY_V,
+                Some(capture_completion),
+                (&mut capture as *mut CallbackCapture).cast(),
+            );
+        }
+
+        assert_eq!(capture.error, Some(PP_Error::InvalidArgument));
+        assert_eq!(
+            capture.message.as_deref(),
+            Some("unsupported keyboard chord 0xE3+0x19")
+        );
     }
 
     #[test]

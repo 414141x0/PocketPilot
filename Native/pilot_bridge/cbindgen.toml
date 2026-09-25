@@ -20,6 +20,7 @@ include = [
     "pp_swipe",
     "pp_type_text",
     "pp_press_key",
+    "pp_press_chord",
     "pp_press",
     "pp_launch_app",
     "pp_list_apps",
