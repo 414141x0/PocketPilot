@@ -36,7 +36,7 @@ extension Element {
     /// `[id] role "label" = "value" @(x,y) flags`, with the value and flags only when present.
     public var outline: String {
         var line = "[\(id)] \(role.rawValue) \"\(label.truncated(to: 80))\""
-        if let value, !value.isEmpty { line += " = \"\(value.truncated(to: 80))\"" }
+        if let value, !value.isEmpty, value != label { line += " = \"\(value.truncated(to: 80))\"" }
         line += " @\(frame.center.grid)"
         if !traits.isEmpty { line += " " + traits.names.joined(separator: " ") }
         return line

@@ -16,9 +16,9 @@ import Testing
 
         let merged = Screen(screenshot: .blank, merging: nodes, onto: [safariText, searchText, clockText]).elements
 
-        #expect(merged.map(\.label) == ["Safari", "Search", "9:41"])
-        #expect(merged.map(\.role) == [.button, .textField, .text])
-        #expect(merged.map(\.id) == [1, 2, 3])
+        #expect(merged.map(\.label) == ["Safari", "Search"], "The status-bar clock is dropped as noise")
+        #expect(merged.map(\.role) == [.button, .textField])
+        #expect(merged.map(\.id) == [1, 2])
         #expect(merged[0].frame == safariText.frame)
         #expect(merged[1].traits == .selected)
     }
@@ -75,5 +75,26 @@ private extension Screenshot {
 
         #expect(screen.elements.map(\.frame) == [upper.frame, lower.frame])
         #expect(screen.unlocated.isEmpty)
+    }
+}
+
+@Suite struct PerceptionCleanupTests {
+    @Test func stripsVoiceOverHints() {
+        #expect(Screen.withoutHints("AWS Console, In iCloud, Updates Frequently, Double tap to download") == "AWS Console")
+        #expect(Screen.withoutHints("Travel folder, 7 apps, Updates Frequently") == "Travel folder, 7 apps")
+    }
+
+    @Test func roleLessLabeledNodesAreButtons() {
+        #expect(Element.Role(accessibilityRole: "") == .button)
+    }
+
+    @Test func dropsStatusBarAndFragmentText() {
+        let clock = Element(id: 1, role: .text, label: "8:12", frame: Rect(x: 0.1, y: 0.02, width: 0.1, height: 0.02))
+        let fragment = Element(id: 2, role: .text, label: "D", frame: Rect(x: 0.3, y: 0.4, width: 0.02, height: 0.02))
+        let word = Element(id: 3, role: .text, label: "TestFlight", frame: Rect(x: 0.2, y: 0.3, width: 0.2, height: 0.02))
+
+        let screen = Screen(screenshot: .blank, merging: [], onto: [clock, fragment, word])
+
+        #expect(screen.elements.map(\.label) == ["TestFlight"])
     }
 }

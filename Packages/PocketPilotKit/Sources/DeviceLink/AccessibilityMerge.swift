@@ -1,4 +1,5 @@
 import AgentCore
+import Foundation
 
 /// One node of the device's accessibility hierarchy. The daemon exposes no geometry,
 /// so nodes gain frames only by matching recognized on-screen text.
@@ -23,12 +24,13 @@ extension Screen {
         var unlocated: [String] = []
 
         for node in nodes where !node.ignored {
-            guard let label = node.label?.normalizedForMatching, !label.isEmpty else { continue }
+            let cleanLabel = node.label.map(Self.withoutHints)
+            guard let label = cleanLabel?.normalizedForMatching, !label.isEmpty else { continue }
             let index = unclaimed.firstIndex { $0.label.normalizedForMatching == label }
                 ?? unclaimed.firstIndex { $0.label.normalizedForMatching.overlaps(label) }
             guard let index else {
                 let role = Element.Role(accessibilityRole: node.role ?? "")
-                if let label = node.label, role.isActionable {
+                if let label = cleanLabel, role.isActionable {
                     unlocated.append("\(role.rawValue) \"\(label)\"")
                 }
                 continue
@@ -38,19 +40,36 @@ extension Screen {
             merged.append(Element(
                 id: merged.count + 1,
                 role: Element.Role(accessibilityRole: node.role ?? ""),
-                label: node.label ?? text.label,
+                label: cleanLabel ?? text.label,
                 value: node.value,
                 frame: text.frame,
                 traits: Element.Traits(accessibilityTraits: node.traits)
             ))
         }
 
-        for text in unclaimed {
+        for text in unclaimed where text.isLegible {
             var text = text
             text.id = merged.count + 1
             merged.append(text)
         }
         self.init(screenshot: screenshot, elements: merged, unlocated: unlocated)
+    }
+
+    /// Hint phrases VoiceOver appends to labels, which say nothing about what an element is.
+    private static let hintPhrases = ["updates frequently", "in icloud", "double tap", "double-tap"]
+
+    static func withoutHints(_ label: String) -> String {
+        label.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { part in !hintPhrases.contains { part.lowercased().hasPrefix($0) } }
+            .joined(separator: ", ")
+    }
+}
+
+private extension Element {
+    /// Recognized text worth listing: below the status bar and made of real words, not icon glyph fragments.
+    var isLegible: Bool {
+        frame.center.y > 0.045 && label.filter(\.isLetter).count >= 3
     }
 }
 
@@ -80,6 +99,8 @@ extension Element.Role {
             (["image", "icon"], .image),
             (["text"], .text),
         ]
+        // Home-screen icons and folders carry a label but no role description, and are tappable.
+        guard !role.isEmpty else { self = .button; return }
         self = rules.first { $0.keywords.contains(where: role.contains) }?.role ?? .other
     }
 }
