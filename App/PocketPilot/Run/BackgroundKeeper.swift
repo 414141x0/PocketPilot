@@ -3,6 +3,7 @@ import AVKit
 import CoreGraphics
 import CoreMedia
 import Foundation
+import Metal
 import OSLog
 import UIKit
 
@@ -16,7 +17,7 @@ import UIKit
 /// app backgrounds mid-run; its pause button stops the run.
 @MainActor
 final class BackgroundKeeper: NSObject {
-    private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
+    private nonisolated static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
     private static let cardSize = CGSize(width: 320, height: 180)
 
     /// Called when the user taps PiP's pause button. RunModel stops the run.
@@ -28,6 +29,9 @@ final class BackgroundKeeper: NSObject {
     private var receiver: AVSampleBufferVideoRenderer.Receiver?
     private var running = false
     private var lastSignature: String?
+    #if DEBUG
+    private var diagnosticTask: Task<Void, Never>?
+    #endif
 
     /// Attaches the on-screen source layer. Called once from KeeperLayerHost.
     /// PiP refuses hidden or fully transparent layers, so the host stays visible.
@@ -68,10 +72,17 @@ final class BackgroundKeeper: NSObject {
             for _ in 0..<20 where !controller.isPictureInPicturePossible {
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            Self.log.info("pip possible=\(controller.isPictureInPicturePossible)")
+            Self.log.info(
+                "pip possible=\(controller.isPictureInPicturePossible) active=\(controller.isPictureInPictureActive) appState=\(UIApplication.shared.applicationState.rawValue)"
+            )
             guard running, pip === controller else { return }
             controller.startPictureInPicture()
         }
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["POCKETPILOT_MLX_DIAGNOSTICS"] != nil {
+            diagnosticTask = Task { await runDiagnostics() }
+        }
+        #endif
     }
 
     /// Enqueues a status card when its content changed. Updates arrive a few per step,
@@ -100,8 +111,87 @@ final class BackgroundKeeper: NSObject {
         pip = nil
         receiver = nil
         synchronizer = nil
+        #if DEBUG
+        diagnosticTask?.cancel()
+        diagnosticTask = nil
+        #endif
         try? AVAudioSession.sharedInstance().setActive(false)
     }
+
+    func logState(step: Int) {
+        Self.log.info(
+            "step=\(step) appState=\(UIApplication.shared.applicationState.rawValue) pipPossible=\(self.pip?.isPictureInPicturePossible ?? false) pipActive=\(self.pip?.isPictureInPictureActive ?? false)"
+        )
+    }
+
+    #if DEBUG
+    /// During device gates, compares a tiny CPU loop with a real Metal compute command buffer.
+    /// This does not introspect MLX's private queue, but proves whether the same process can still
+    /// schedule and complete GPU work while an MLX request is outstanding in the background.
+    private func runDiagnostics() async {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let queue = device.makeCommandQueue(),
+              let library = try? await device.makeLibrary(
+                  source: "kernel void pp_heartbeat(device uint *x [[buffer(0)]], uint i [[thread_position_in_grid]]) { x[i] = x[i] * 33 + i; }",
+                  options: nil
+              ),
+              let function = library.makeFunction(name: "pp_heartbeat"),
+              let pipeline = try? await device.makeComputePipelineState(function: function),
+              let buffer = device.makeBuffer(length: 4_096 * MemoryLayout<UInt32>.stride)
+        else {
+            Self.log.error("diagnostic Metal setup failed")
+            return
+        }
+
+        var index = 0
+        while running, !Task.isCancelled {
+            index += 1
+            let clock = ContinuousClock()
+            let cpuStart = clock.now
+            var checksum = 0
+            for value in 0 ..< 100_000 { checksum &+= value &* 31 }
+            let cpuMS = Self.milliseconds(cpuStart.duration(to: clock.now))
+
+            guard let commands = queue.makeCommandBuffer(),
+                  let encoder = commands.makeComputeCommandEncoder()
+            else {
+                Self.log.error("diagnostic Metal command allocation failed")
+                return
+            }
+            encoder.setComputePipelineState(pipeline)
+            encoder.setBuffer(buffer, offset: 0, index: 0)
+            encoder.dispatchThreads(
+                MTLSize(width: 4_096, height: 1, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
+            encoder.endEncoding()
+            let gpuStart = clock.now
+            commands.commit()
+            for _ in 0 ..< 50
+            where commands.status != .completed && commands.status != .error
+            {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            let gpuMS = Self.milliseconds(gpuStart.duration(to: clock.now))
+            let error = commands.error.map(String.init(describing:)) ?? "none"
+            Self.log.info(
+                "diagnostic #\(index) appState=\(UIApplication.shared.applicationState.rawValue) pipPossible=\(self.pip?.isPictureInPicturePossible ?? false) pipActive=\(self.pip?.isPictureInPictureActive ?? false) cpu=\(cpuMS, privacy: .public)ms checksum=\(checksum, privacy: .public) gpu=\(gpuMS, privacy: .public)ms status=\(commands.status.rawValue, privacy: .public) error=\(error, privacy: .public)"
+            )
+            if commands.status != .completed { return }
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                return
+            }
+        }
+    }
+
+    private static func milliseconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) * 1_000
+            + Double(components.attoseconds) / 1_000_000_000_000_000
+    }
+    #endif
 
     private func didPressPause() {
         onPause?()
@@ -187,6 +277,21 @@ final class BackgroundKeeper: NSObject {
 }
 
 extension BackgroundKeeper: AVPictureInPictureSampleBufferPlaybackDelegate {
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        Self.log.info("pip didStart active=\(controller.isPictureInPictureActive)")
+    }
+
+    nonisolated func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: any Error
+    ) {
+        Self.log.error("pip failedToStart: \(String(describing: error), privacy: .public)")
+    }
+
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        Self.log.info("pip didStop active=\(controller.isPictureInPictureActive)")
+    }
+
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
         guard !playing else { return }
         Task { await self.didPressPause() }

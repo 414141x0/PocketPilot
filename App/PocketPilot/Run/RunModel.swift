@@ -105,6 +105,7 @@ final class RunModel {
             phase = .running(step: step)
             currentStep = step
             latestScreenshot = screen.screenshot.image
+            keeper.logState(step: step)
             updateActivity()
         case .decided(let decision):
             let action = String(describing: decision.action)
