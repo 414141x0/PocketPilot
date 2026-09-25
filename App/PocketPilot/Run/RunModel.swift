@@ -37,6 +37,11 @@ final class RunModel {
 
     private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "Run")
 
+    /// Gestures performed before the first observation: leave PocketPilot for the first
+    /// Home Screen page (its own interface is never the target of a run, and a second Home
+    /// press from the Home Screen always returns to page one).
+    private static let preparation: [Gesture] = [.press(.home), .press(.home)]
+
     private(set) var phase = Phase.idle
     private(set) var entries: [Entry] = []
     private(set) var latestScreenshot: CGImage?
@@ -76,9 +81,12 @@ final class RunModel {
             keeper.start()
             do {
                 let phone = try await connection.phone(pairing: pairing)
-                // Leave PocketPilot for the first Home Screen page: its own interface is never the target of a run,
-                // and a second Home press from the Home Screen always returns to page one.
-                let outcome = try await Agent(device: phone, pilot: pilot, preparation: [.press(.home), .press(.home)]).run(goal) { record($0) }
+                for gesture in Self.preparation {
+                    try await phone.perform(gesture)
+                }
+                // Hide the PiP status card before the first observation so the pilot never sees it.
+                await stashPiPCard(phone: phone)
+                let outcome = try await Agent(device: phone, pilot: pilot).run(goal) { record($0) }
                 phase = .finished(outcome)
                 await endActivity(phase.conclusion ?? "")
             } catch where Task.isCancelled {
@@ -100,6 +108,49 @@ final class RunModel {
     /// Cancels the current run; its task clears itself once the agent unwinds.
     func stop() {
         task?.cancel()
+    }
+
+    /// Flings the PiP status card into the left screen edge so the pilot's screenshots stay clean.
+    /// Best effort: logs the outcome and never fails the run.
+    @MainActor
+    private func stashPiPCard(phone: any Device) async {
+        var pipActive = false
+        for _ in 0..<50 where !Task.isCancelled {
+            if keeper.isPictureInPictureActive {
+                pipActive = true
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        guard pipActive else {
+            Self.log.info("pip stash skipped: pip never became active")
+            return
+        }
+        do {
+            // A fast flick stashes; a slow drag just moves the card. Retry once, faster.
+            for duration in [Duration.milliseconds(120), Duration.milliseconds(60)] {
+                let screen = try await phone.observe()
+                guard let card = screen.elements.first(where: Self.isPiPCard) else {
+                    Self.log.info("pip stash: card not visible, nothing to hide")
+                    return
+                }
+                let center = card.frame.center
+                try await phone.perform(.swipe(from: center, to: Point(x: 0, y: center.y), duration: duration))
+            }
+            let screen = try await phone.observe()
+            if screen.elements.contains(where: Self.isPiPCard) {
+                Self.log.error("pip stash failed: card still visible after retry")
+            } else {
+                Self.log.info("pip stash succeeded")
+            }
+        } catch {
+            Self.log.error("pip stash failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private static func isPiPCard(_ element: Element) -> Bool {
+        element.label.localizedCaseInsensitiveContains(BackgroundKeeper.cardMarker)
+            || element.value?.localizedCaseInsensitiveContains(BackgroundKeeper.cardMarker) == true
     }
 
     private func record(_ event: Agent.Event) {
@@ -134,7 +185,7 @@ extension RunModel {
         activityUpdate = Task {
             await previous?.value
             await runActivity.update(step: step, thought: thought, action: action)
-            await MainActor.run { keeper.render(step: step, thought: thought, action: action) }
+            await MainActor.run { keeper.render(step: step, action: action) }
         }
     }
 

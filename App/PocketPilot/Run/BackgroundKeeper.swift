@@ -17,10 +17,18 @@ import UIKit
 @MainActor
 final class BackgroundKeeper: NSObject {
     private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
-    private static let cardSize = CGSize(width: 320, height: 180)
+    // Small on purpose: the PiP window covers part of the screen the agent
+    // reads, so the card defaults compact and every run stashes it at an edge.
+    private static let cardSize = CGSize(width: 240, height: 120)
+    /// Marker text drawn on the card so RunModel can find it on screen to stash it.
+    static let cardMarker = "PocketPilot"
 
     /// Called when the user taps PiP's pause button. RunModel stops the run.
     var onPause: (() -> Void)?
+
+    /// Whether the PiP window is currently on screen. RunModel waits for this
+    /// before stashing the card at run start.
+    var isPictureInPictureActive: Bool { pip?.isPictureInPictureActive ?? false }
 
     private var displayLayer: AVSampleBufferDisplayLayer?
     private var pip: AVPictureInPictureController?
@@ -57,7 +65,7 @@ final class BackgroundKeeper: NSObject {
         synchronizer.setRate(1, time: CMClockGetTime(CMClockGetHostTimeClock()))
         receiver = synchronizer.sampleBufferReceiver(adding: layer.sampleBufferRenderer)
         self.synchronizer = synchronizer
-        render(step: 0, thought: "", action: "")
+        render(step: 0, action: "")
         let controller = AVPictureInPictureController(
             contentSource: .init(sampleBufferDisplayLayer: layer, playbackDelegate: self)
         )
@@ -76,11 +84,11 @@ final class BackgroundKeeper: NSObject {
 
     /// Enqueues a status card when its content changed. Updates arrive a few per step,
     /// already ordered by RunModel, so every change is drawn.
-    func render(step: Int, thought: String, action: String) {
+    func render(step: Int, action: String) {
         guard running else { return }
-        let signature = "\(step)\n\(action)\n\(thought)"
+        let signature = "\(step)\n\(action)"
         guard signature != lastSignature,
-              let sample = Self.sampleBuffer(step: step, thought: thought, action: action),
+              let sample = Self.sampleBuffer(step: step, action: action),
               let receiver
         else { return }
         lastSignature = signature
@@ -109,8 +117,8 @@ final class BackgroundKeeper: NSObject {
 
     // MARK: - Card rendering
 
-    private static func sampleBuffer(step: Int, thought: String, action: String) -> sending CMSampleBuffer? {
-        let image = cardImage(step: step, thought: thought, action: action)
+    private static func sampleBuffer(step: Int, action: String) -> sending CMSampleBuffer? {
+        let image = cardImage(step: step, action: action)
         guard let cgImage = image.cgImage else { return nil }
         return makeSample(from: cgImage)
     }
@@ -137,8 +145,8 @@ final class BackgroundKeeper: NSObject {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return nil }
-        ctx.translateBy(x: 0, y: CGFloat(height))
-        ctx.scaleBy(x: 1, y: -1)
+        // No flip: drawImage preserves CGImage row order, so row 0 lands in
+        // memory row 0 (the video frame's top). A y-flip here renders upside down.
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         var format: CMVideoFormatDescription?
@@ -157,7 +165,7 @@ final class BackgroundKeeper: NSObject {
         return sample
     }
 
-    private static func cardImage(step: Int, thought: String, action: String) -> UIImage {
+    private static func cardImage(step: Int, action: String) -> UIImage {
         UIGraphicsImageRenderer(size: cardSize).image { _ in
             UIColor(white: 0.08, alpha: 1).setFill()
             UIRectFill(CGRect(origin: .zero, size: cardSize))
@@ -166,21 +174,21 @@ final class BackgroundKeeper: NSObject {
                 style.lineBreakMode = .byTruncatingTail
                 return style
             }()
+            ("\(cardMarker) ⏸" as NSString).draw(
+                in: CGRect(x: 10, y: 4, width: 220, height: 20),
+                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 15), .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
+            )
             (String(localized: "Step \(step)") as NSString).draw(
-                in: CGRect(x: 16, y: 10, width: 288, height: 36),
-                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 26), .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
+                in: CGRect(x: 10, y: 26, width: 220, height: 24),
+                withAttributes: [.font: UIFont.boldSystemFont(ofSize: 19), .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
             )
             (action as NSString).draw(
-                in: CGRect(x: 16, y: 50, width: 288, height: 24),
-                withAttributes: [.font: UIFont.systemFont(ofSize: 17), .foregroundColor: UIColor.lightGray, .paragraphStyle: paragraph]
-            )
-            (thought as NSString).draw(
-                in: CGRect(x: 16, y: 78, width: 288, height: 44),
-                withAttributes: [.font: UIFont.systemFont(ofSize: 15), .foregroundColor: UIColor.gray, .paragraphStyle: paragraph]
+                in: CGRect(x: 10, y: 52, width: 220, height: 36),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 13), .foregroundColor: UIColor.lightGray, .paragraphStyle: paragraph]
             )
             (String(localized: "⏸ to stop") as NSString).draw(
-                in: CGRect(x: 16, y: 148, width: 288, height: 22),
-                withAttributes: [.font: UIFont.systemFont(ofSize: 14), .foregroundColor: UIColor.darkGray, .paragraphStyle: paragraph]
+                in: CGRect(x: 10, y: 98, width: 220, height: 16),
+                withAttributes: [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.darkGray, .paragraphStyle: paragraph]
             )
         }
     }
