@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "AgentCore", targets: ["AgentCore"]),
         .library(name: "DeviceLink", targets: ["DeviceLink"]),
         .library(name: "OpenAIPilot", targets: ["OpenAIPilot"]),
+        .library(name: "GeminiPilot", targets: ["GeminiPilot"]),
         .library(name: "SystemPilot", targets: ["SystemPilot"]),
         .library(name: "RunActivity", targets: ["RunActivity"]),
     ],
@@ -35,6 +36,11 @@ let package = Package(
             swiftSettings: settings
         ),
         .target(
+            name: "GeminiPilot",
+            dependencies: ["AgentCore"],
+            swiftSettings: settings
+        ),
+        .target(
             name: "SystemPilot",
             dependencies: ["AgentCore"],
             swiftSettings: settings
@@ -43,6 +49,7 @@ let package = Package(
         .testTarget(name: "AgentCoreTests", dependencies: ["AgentCore"], swiftSettings: settings),
         .testTarget(name: "DeviceLinkTests", dependencies: ["DeviceLink"], swiftSettings: settings),
         .testTarget(name: "OpenAIPilotTests", dependencies: ["OpenAIPilot"], swiftSettings: settings),
+        .testTarget(name: "GeminiPilotTests", dependencies: ["GeminiPilot"], swiftSettings: settings),
         .testTarget(name: "SystemPilotTests", dependencies: ["SystemPilot"], swiftSettings: settings),
         .testTarget(name: "RunActivityTests", dependencies: ["RunActivity"], swiftSettings: settings),
     ]
