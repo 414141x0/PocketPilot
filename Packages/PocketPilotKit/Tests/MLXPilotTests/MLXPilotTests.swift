@@ -229,7 +229,7 @@ struct MLXPilotTests {
         #expect(MLXPilot.mapDecision(openNumericReply) == Decision(thought: "Next: open Clock", action: .open(app: "Clock")))
 
         // Grammar bleed regex detects suspicious trailing digit before bracket
-        let bleedRegex = #"\d[\}\]]"#
+        let bleedRegex = MLXDecisionSchema.grammarBleedRegex
         #expect("...Next1}".range(of: bleedRegex, options: .regularExpression) != nil)
         #expect("Did: Op1]".range(of: bleedRegex, options: .regularExpression) != nil)
         #expect("Next: open Clock".range(of: bleedRegex, options: .regularExpression) == nil)

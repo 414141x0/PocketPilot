@@ -11,14 +11,30 @@ import PilotSchema
 /// before it ever reaches the required thought. This flat action envelope bounds every numeric
 /// field, then converts back to the shared `Reply` before mapping to `Action`.
 enum MLXDecisionSchema {
+    static let grammarBleedRegex = #"\d[\}\]]"#
+
     static var generationSchema: GenerationSchema {
-        generationSchema(apps: [], elementIDs: [])
+        unconstrainedSchema
     }
+
+    private static let unconstrainedSchema: GenerationSchema = {
+        buildGenerationSchema(apps: [], elementIDs: [])!
+    }()
 
     static func generationSchema(
         apps: [String] = [],
         elementIDs: [Int] = []
     ) -> GenerationSchema {
+        if apps.isEmpty && elementIDs.isEmpty {
+            return unconstrainedSchema
+        }
+        return buildGenerationSchema(apps: apps, elementIDs: elementIDs) ?? unconstrainedSchema
+    }
+
+    private static func buildGenerationSchema(
+        apps: [String],
+        elementIDs: [Int]
+    ) -> GenerationSchema? {
         let actionType = DynamicGenerationSchema(
             name: "ActionType",
             anyOf: [
@@ -92,7 +108,7 @@ enum MLXDecisionSchema {
                 .init(name: "action", schema: action),
             ]
         )
-        return try! GenerationSchema(root: root, dependencies: [])
+        return try? GenerationSchema(root: root, dependencies: [])
     }
 
     static func reply(from content: GeneratedContent, on screen: Screen) throws -> Reply {

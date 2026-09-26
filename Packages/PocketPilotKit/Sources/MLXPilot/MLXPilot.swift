@@ -199,7 +199,7 @@ public struct MLXPilot: Pilot {
             )
         }
         let rawThought: String? = try? response.content.value(forProperty: "thought")
-        if let rawThought, rawThought.range(of: #"\d[\}\]]"#, options: .regularExpression) != nil {
+        if let rawThought, rawThought.range(of: MLXDecisionSchema.grammarBleedRegex, options: .regularExpression) != nil {
             let bytes = [UInt8](rawJSON.utf8)
             Self.log.debug(
                 "Suspicious thought grammar bleed in Step \(step.number, privacy: .public) ('\(rawThought, privacy: .public)'): raw bytes (\(bytes.count, privacy: .public)): \(bytes, privacy: .public)"
