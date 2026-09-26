@@ -64,7 +64,7 @@ final class Setup {
     /// The pilot for the chosen brain.
     var pilot: any Pilot {
         switch brain {
-        case .onDevice: SystemPilot()
+        case .onDevice: return SystemPilot()
         case .localMLX:
             if let cachedMLXPilot { return cachedMLXPilot }
             guard let directory = mlxModel.modelDirectory,
@@ -73,8 +73,8 @@ final class Setup {
             }
             cachedMLXPilot = pilot
             return pilot
-        case .openAI: OpenAIPilot(apiKey: openAIKey)
-        case .gemini: GeminiPilot(apiKey: geminiKey)
+        case .openAI: return OpenAIPilot(apiKey: openAIKey)
+        case .gemini: return GeminiPilot(apiKey: geminiKey)
         }
     }
 
