@@ -9,7 +9,8 @@ import Testing
         #expect(!error.isRecoverable)
         #expect(error.description.contains("Join Wi-Fi to continue"))
         #expect(error.description.contains("while joined to a Wi-Fi network"))
-        #expect(error.description.contains("Join any Wi-Fi (or hotspot)"))
+        #expect(error.description.contains("another phone's hotspot works too"))
+        #expect(error.description.contains("then reconnect LocalDevVPN"))
         #expect(!error.description.contains("Airplane Mode on"))
     }
 
