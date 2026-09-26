@@ -7,8 +7,8 @@ import Testing
     @Test func wifiOffDescriptionExplainsJoinedRequirementAndGuidance() {
         let error = DeviceError.wifiOff
         #expect(!error.isRecoverable)
-        #expect(error.description.contains("Join Wi-Fi to continue"))
-        #expect(error.description.contains("while joined to a Wi-Fi network"))
+        #expect(error.description.contains("Join Wi-Fi to connect"))
+        #expect(error.description.contains("Once connected you can leave it"))
         #expect(error.description.contains("another phone's hotspot works too"))
         #expect(error.description.contains("then reconnect LocalDevVPN"))
         #expect(!error.description.contains("Airplane Mode on"))

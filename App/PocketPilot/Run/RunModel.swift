@@ -63,6 +63,27 @@ final class RunModel {
     var isRunning: Bool { task != nil }
     var connectionState: Connection.State { connection.state }
 
+    private(set) var isWiFiJoined = true
+
+    /// Proactively opens the device link in the background when ready, so later runs don't need Wi-Fi.
+    func warmConnectionIfNeeded(pairing: PairingFile?) {
+        guard !isRunning else { return }
+        Task {
+            await updateWiFiStatus()
+            guard let pairing, isWiFiJoined else { return }
+            switch connection.state {
+            case .disconnected, .failed:
+                _ = try? await connection.phone(pairing: pairing)
+            case .connecting, .connected:
+                break
+            }
+        }
+    }
+
+    func updateWiFiStatus() async {
+        isWiFiJoined = await WiFi.isUp()
+    }
+
     /// Connects on first use, then drives the chosen pilot toward `goal`.
     func start(_ goal: String, pairing: PairingFile, pilot: any Pilot) {
         guard !isRunning else { return }
@@ -96,7 +117,12 @@ final class RunModel {
                 await endActivity(String(localized: "Run stopped."))
             } catch let error as DeviceError where !error.isRecoverable {
                 Self.log.error("Run failed: \(error.description, privacy: .public)")
-                connection.reset()
+                switch error {
+                case .disconnected, .connectionFailed:
+                    connection.reset()
+                default:
+                    break
+                }
                 phase = .failed(error.description)
                 await endActivity(error.description)
             } catch {

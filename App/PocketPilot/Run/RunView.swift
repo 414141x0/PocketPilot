@@ -6,6 +6,7 @@ import SwiftUI
 struct RunView: View {
     let setup: Setup
     let model: RunModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var goal = ""
     @State private var isShowingSetup = false
 
@@ -61,7 +62,7 @@ struct RunView: View {
             .navigationTitle("PocketPilot")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    ConnectionChip(state: model.connectionState)
+                    ConnectionChip(state: model.connectionState, isWiFiJoined: model.isWiFiJoined)
                 }
                 ToolbarItem(placement: .status) {
                     PhaseLabel(phase: model.phase)
@@ -82,6 +83,11 @@ struct RunView: View {
             }
             .task {
                 isShowingSetup = !setup.isReady
+                if setup.isReady {
+                    model.warmConnectionIfNeeded(pairing: setup.pairing)
+                } else {
+                    await model.updateWiFiStatus()
+                }
                 #if DEBUG
                 switch ProcessInfo.processInfo.environment["POCKETPILOT_PROBE"] {
                 case "full": await PortProbe.scanAll()
@@ -103,12 +109,27 @@ struct RunView: View {
                 }
                 #endif
             }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    if setup.isReady {
+                        model.warmConnectionIfNeeded(pairing: setup.pairing)
+                    } else {
+                        Task { await model.updateWiFiStatus() }
+                    }
+                }
+            }
+            .onChange(of: setup.isReady) { _, isReady in
+                if isReady {
+                    model.warmConnectionIfNeeded(pairing: setup.pairing)
+                }
+            }
         }
     }
 }
 
 private struct ConnectionChip: View {
     let state: Connection.State
+    let isWiFiJoined: Bool
 
     var body: some View {
         HStack(spacing: 5) {
@@ -135,10 +156,14 @@ private struct ConnectionChip: View {
 
     private var statusText: LocalizedStringResource {
         switch state {
-        case .disconnected: "Ready"
-        case .connecting: "Connecting…"
-        case .connected(let seesScreen): seesScreen ? "Connected" : "CoreDevice"
-        case .failed: "Failed"
+        case .disconnected:
+            isWiFiJoined ? "Ready" : "Join Wi-Fi once to connect"
+        case .connecting:
+            "Connecting…"
+        case .connected:
+            "Connected: you can leave Wi-Fi"
+        case .failed:
+            "Failed"
         }
     }
 }

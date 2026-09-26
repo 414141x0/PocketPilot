@@ -1,8 +1,8 @@
 import Network
 
-enum WiFi {
+public enum WiFi {
     /// Whether a Wi-Fi interface is currently usable, settling up to `settle` duration for initial path events.
-    static func isUp(settle: Duration = .milliseconds(1500)) async -> Bool {
+    public static func isUp(settle: Duration = .milliseconds(1500)) async -> Bool {
         let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
         let stream = AsyncStream<Bool> { continuation in
             let task = Task {
