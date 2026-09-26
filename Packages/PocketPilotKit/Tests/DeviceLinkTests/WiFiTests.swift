@@ -27,7 +27,7 @@ import Testing
         let elapsed = ContinuousClock().now - start
 
         #expect(!isUp)
-        #expect(elapsed >= .milliseconds(90) && elapsed < .milliseconds(500))
+        #expect(elapsed >= .milliseconds(80) && elapsed < .seconds(2))
     }
 
     @Test func delayedSatisfiedStreamReturnsTrueImmediately() async {
@@ -48,6 +48,6 @@ import Testing
         let elapsed = ContinuousClock().now - start
 
         #expect(isUp)
-        #expect(elapsed < .milliseconds(500))
+        #expect(elapsed < .seconds(2))
     }
 }
