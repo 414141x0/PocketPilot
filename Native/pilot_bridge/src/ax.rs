@@ -25,6 +25,7 @@ pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
     /// Last pid from `hostDeviceFrontmostAppPidDidChange:`. There is no device-side getter.
     frontmost_pid: Option<i64>,
+    app_state_dumps: u8,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -183,6 +184,7 @@ impl AxClient {
         let mut client = Self {
             dtx,
             frontmost_pid: None,
+            app_state_dumps: 0,
         };
         client.disable_inspector_highlight().await?;
         Ok(client)
@@ -346,6 +348,12 @@ impl AxClient {
         let Some(selector) = message.data.as_ref().and_then(Value::as_string) else {
             return;
         };
+        if selector == "hostAppStateChanged:" {
+            if let Ok(Some(payload)) = decode_first_argument(message) {
+                self.dump_app_state(&payload);
+            }
+            return;
+        }
         let is_pid = selector == "hostDeviceFrontmostAppPidDidChange:"
             || selector.contains("FrontmostAppPid");
         if !is_pid {
@@ -356,6 +364,18 @@ impl AxClient {
         {
             self.frontmost_pid = Some(pid);
         }
+    }
+
+    fn dump_app_state(&mut self, payload: &Value) {
+        if self.app_state_dumps >= 5 {
+            return;
+        }
+        self.app_state_dumps += 1;
+        let preview = plist_preview(payload, 600);
+        eprintln!(
+            "pilot_bridge: hostAppStateChanged[{}] {}",
+            self.app_state_dumps, preview
+        );
     }
 
     async fn disable_inspector_highlight(&mut self) -> Result<(), String> {
@@ -502,6 +522,55 @@ async fn flush_initial_messages(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>
         {
             break;
         }
+    }
+}
+
+fn plist_preview(value: &Value, budget: usize) -> String {
+    let mut out = String::new();
+    write_plist_preview(value, &mut out);
+    let count = out.chars().count();
+    if count > budget {
+        let truncated: String = out.chars().take(budget).collect();
+        format!("{truncated}…")
+    } else {
+        out
+    }
+}
+
+fn write_plist_preview(value: &Value, out: &mut String) {
+    match value {
+        Value::String(string) => {
+            out.push('"');
+            out.push_str(string);
+            out.push('"');
+        }
+        Value::Integer(integer) => out.push_str(&integer.to_string()),
+        Value::Real(real) => out.push_str(&real.to_string()),
+        Value::Boolean(boolean) => out.push_str(if *boolean { "true" } else { "false" }),
+        Value::Data(data) => out.push_str(&format!("<data {}B>", data.len())),
+        Value::Array(array) => {
+            out.push('[');
+            for (index, item) in array.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_plist_preview(item, out);
+            }
+            out.push(']');
+        }
+        Value::Dictionary(dictionary) => {
+            out.push('{');
+            for (index, (key, item)) in dictionary.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(key);
+                out.push(':');
+                write_plist_preview(item, out);
+            }
+            out.push('}');
+        }
+        other => out.push_str(&format!("{other:?}")),
     }
 }
 
@@ -694,6 +763,18 @@ mod tests {
         assert_eq!(builder.elements.len(), 2);
         assert_eq!(builder.elements[0].children, ["child"]);
         assert_eq!(builder.elements[1].token_hex, "02");
+    }
+
+    #[test]
+    fn plist_preview_shows_keys_and_truncates() {
+        let value = Value::Dictionary(Dictionary::from_iter([
+            ("pid".to_string(), Value::Integer(501.into())),
+            ("state".to_string(), Value::String("foreground".into())),
+        ]));
+        let preview = plist_preview(&value, 600);
+        assert!(preview.contains("pid"));
+        assert!(preview.contains("501"));
+        assert!(plist_preview(&value, 8).ends_with('…'));
     }
 
     #[test]
