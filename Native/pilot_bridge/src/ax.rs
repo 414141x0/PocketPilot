@@ -253,9 +253,11 @@ impl AxClient {
             if let Err(error) = self
                 .invoke(selector, vec![AuxValue::archived_value(false)])
                 .await
-                && required
             {
-                return Err(error);
+                if required {
+                    return Err(error);
+                }
+                eprintln!("pilot_bridge: optional AX selector {selector} failed: {error}");
             }
         }
         Ok(())
