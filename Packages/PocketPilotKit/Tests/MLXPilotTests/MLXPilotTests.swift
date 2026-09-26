@@ -237,7 +237,7 @@ struct MLXPilotTests {
 
     @Test func dynamicSchemaConstrainsAppEnumAndElementRange() throws {
         let schema = MLXDecisionSchema.generationSchema(
-            apps: ["", "Weather", "Clock"],
+            apps: ["Weather", "Clock"],
             elementIDs: [3, 7, 12]
         )
         let data = try JSONEncoder().encode(schema)

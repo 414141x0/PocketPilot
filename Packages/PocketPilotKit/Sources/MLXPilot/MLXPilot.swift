@@ -59,6 +59,17 @@ public struct MLXPilot: Pilot {
     }
 
     public func decide(_ step: Step) async throws -> Decision {
+        let memBefore = Self.availableMemory
+        Self.log.notice(
+            "Step \(step.number, privacy: .public) starting MLX decide; available memory: \(memBefore, privacy: .public) bytes"
+        )
+        defer {
+            let memAfter = Self.availableMemory
+            let delta = memBefore - memAfter
+            Self.log.notice(
+                "Step \(step.number, privacy: .public) completed MLX decide; available memory: \(memAfter, privacy: .public) bytes (delta: \(delta, privacy: .public) bytes)"
+            )
+        }
         let clock = ContinuousClock()
         let preparationStart = clock.now
         let image = Self.resized(await step.screen.markedScreenshot().image, maximumDimension: 512)
@@ -152,7 +163,7 @@ public struct MLXPilot: Pilot {
             }
         }
         defer { watchdog.cancel() }
-        var appCandidates: [String] = [""]
+        var appCandidates: [String] = []
         for app in step.mentionedApps {
             let trimmed = app.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty && !appCandidates.contains(trimmed) {
@@ -171,7 +182,7 @@ public struct MLXPilot: Pilot {
                 appCandidates.append(label)
             }
         }
-        let dynamicApps = appCandidates.count > 1 ? Array(appCandidates.prefix(61)) : []
+        let dynamicApps = Array(appCandidates.prefix(60))
         let visibleIDs = step.screen.elements.map(\.id)
         let schema = MLXDecisionSchema.generationSchema(apps: dynamicApps, elementIDs: visibleIDs)
 
