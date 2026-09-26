@@ -15,12 +15,11 @@ const MAX_DEPTH: usize = 12;
 const MAX_NODES: usize = 300;
 
 /// Turns off the Accessibility Inspector overlay that the focus walk otherwise paints
-/// as a green box into every screenshot. `required` selectors must succeed; others
-/// are best-effort so a missing daemon method cannot take down snapshots.
-const INSPECTOR_HIGHLIGHT_OFF: [(&str, bool); 2] = [
-    ("deviceInspectorShowVisuals:", true),
-    ("deviceEnableHighlight:", false),
-];
+/// as a green box into every screenshot. Sent fire-and-forget (`expects_reply=false`):
+/// a daemon that lacks a selector does not error; a socket write failure fails connect,
+/// and would fail the snapshot anyway.
+const INSPECTOR_HIGHLIGHT_OFF: [&str; 2] =
+    ["deviceInspectorShowVisuals:", "deviceEnableHighlight:"];
 
 pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
@@ -249,16 +248,9 @@ impl AxClient {
     }
 
     async fn disable_inspector_highlight(&mut self) -> Result<(), String> {
-        for &(selector, required) in &INSPECTOR_HIGHLIGHT_OFF {
-            if let Err(error) = self
-                .invoke(selector, vec![AuxValue::archived_value(false)])
-                .await
-            {
-                if required {
-                    return Err(error);
-                }
-                eprintln!("pilot_bridge: optional AX selector {selector} failed: {error}");
-            }
+        for selector in INSPECTOR_HIGHLIGHT_OFF {
+            self.invoke(selector, vec![AuxValue::archived_value(false)])
+                .await?;
         }
         Ok(())
     }
@@ -523,13 +515,10 @@ mod tests {
     }
 
     #[test]
-    fn inspector_highlight_off_is_visuals_required_and_highlight_optional() {
+    fn inspector_highlight_off_sends_visuals_and_highlight() {
         assert_eq!(
             INSPECTOR_HIGHLIGHT_OFF,
-            [
-                ("deviceInspectorShowVisuals:", true),
-                ("deviceEnableHighlight:", false),
-            ]
+            ["deviceInspectorShowVisuals:", "deviceEnableHighlight:",]
         );
     }
 
