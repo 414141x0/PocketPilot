@@ -323,10 +323,12 @@ impl AxClient {
         let Some(event) = parse_app_state(&payload) else {
             return;
         };
-        eprintln!(
-            "pilot_bridge: app {} pid={} state={} {}",
-            event.display_id, event.pid, event.state, event.description
-        );
+        if std::env::var_os("POCKETPILOT_RECORD").is_some() {
+            eprintln!(
+                "pilot_bridge: app {} pid={} state={} {}",
+                event.display_id, event.pid, event.state, event.description
+            );
+        }
         self.app_states.insert(event.pid, event);
     }
 
@@ -814,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_springboard_app_state_payload() {
+    fn parses_app_state_payload() {
         let payload = app_state_payload(
             "com.apple.weather",
             501,
@@ -865,12 +867,12 @@ mod tests {
             description: "Foreground Running".into(),
             time: 250,
             exec_name: "MobileTimer".into(),
-            app_name: "Clock".into(),
+            app_name: "Unknown".into(),
         };
         assert_eq!(
             choose_frontmost([&weather, &service, &clock]),
             Some(FrontmostApp {
-                name: "Clock".into(),
+                name: "MobileTimer".into(),
                 bundle_id: "com.apple.mobiletimer".into(),
             })
         );
