@@ -291,6 +291,8 @@ private struct PhaseLabel: View {
         case .connecting: Label("Connecting", systemImage: "cable.connector")
         case .running(let step): Text("Step \(step)")
         case .finished(.completed): Label("Done", systemImage: "checkmark.circle")
+        case .finished(.abandoned(let reason)) where reason.hasPrefix("read-only"):
+            Label("Stopped", systemImage: "hand.raised")
         case .finished(.abandoned): Label("Gave up", systemImage: "xmark.circle")
         case .finished(.outOfSteps): Label("Out of steps", systemImage: "hourglass")
         case .failed: Label("Failed", systemImage: "exclamationmark.octagon")

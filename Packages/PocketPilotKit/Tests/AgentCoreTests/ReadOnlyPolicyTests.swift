@@ -216,6 +216,7 @@ import Testing
 
         let outcome = try await agent.run("Open Clock and do not modify anything")
         #expect(outcome == .abandoned(reason: "read-only: kept choosing changes"))
+        #expect(outcome.displayLine == "Stopped: read-only")
 
         // Verify the device NEVER received a tap gesture
         let performed = await device.performedGestures

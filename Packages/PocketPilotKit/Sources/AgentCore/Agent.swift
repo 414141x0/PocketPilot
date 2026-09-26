@@ -62,6 +62,16 @@ public struct Agent: Sendable {
         case completed(summary: String)
         case abandoned(reason: String)
         case outOfSteps
+
+        /// Line shown in the run log and Live Activity when the run ends.
+        public var displayLine: String {
+            switch self {
+            case .completed(let summary): summary
+            case .abandoned(let reason) where reason.hasPrefix("read-only"): "Stopped: read-only"
+            case .abandoned(let reason): reason
+            case .outOfSteps: "Stopped after reaching the step limit."
+            }
+        }
     }
 
     public func run(_ goal: String, onEvent: (Event) -> Void = { _ in }) async throws -> Outcome {
