@@ -51,6 +51,7 @@ import Testing
     @Test(arguments: [
         ("Search Field", Element.Role.textField), ("Static Text", .text), ("Button", .button),
         ("Switch Button", .toggle), ("Tab Bar Button", .tab), ("Heading", .header), ("Group", .other),
+        ("Segmented Control", .slider),
     ])
     func mapsRoleNames(_ name: String, _ role: Element.Role) {
         #expect(Element.Role(accessibilityRole: name) == role)

@@ -20,6 +20,8 @@ public struct Step: Sendable {
     public var mentionedApps: [String]
     /// The app actually owning the foreground UI at observation time.
     public var app: FrontmostApp?
+    /// Whether this step is being executed under read-only policy.
+    public var isReadOnly: Bool
 
     public init(
         goal: String,
@@ -27,7 +29,8 @@ public struct Step: Sendable {
         history: [Turn] = [],
         remembered: String? = nil,
         mentionedApps: [String] = [],
-        app: FrontmostApp? = nil
+        app: FrontmostApp? = nil,
+        isReadOnly: Bool = false
     ) {
         self.goal = goal
         self.screen = screen
@@ -35,6 +38,7 @@ public struct Step: Sendable {
         self.remembered = remembered
         self.mentionedApps = mentionedApps
         self.app = app
+        self.isReadOnly = isReadOnly
     }
 
     public var number: Int { history.count + 1 }

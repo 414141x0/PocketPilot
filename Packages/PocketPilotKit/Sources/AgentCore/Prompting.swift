@@ -110,6 +110,9 @@ extension Step {
                 + " (installed; reach them with open)"
         }
         if let remembered { head += "\n\nRemembered: \(remembered)" }
+        if isReadOnly {
+            head += "\n\nMode: Read-only. Changing device state (typing, editing, toggling, deleting, saving, or submitting) is forbidden. Choose done or navigate safely."
+        }
         return """
         \(head)
 
