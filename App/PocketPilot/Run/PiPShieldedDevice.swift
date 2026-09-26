@@ -30,6 +30,10 @@ nonisolated struct PiPShieldedDevice: Device {
     func installedApps() async throws(DeviceError) -> [InstalledApp] {
         try await base.installedApps()
     }
+
+    func frontmostApp() async throws(DeviceError) -> FrontmostApp? {
+        try await base.frontmostApp()
+    }
 }
 
 /// The on-screen extent of the PiP status card, found by its marker and "to stop" lines.
