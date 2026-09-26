@@ -426,6 +426,10 @@ private actor AlternatingDevice: Device {
         #expect(step.brief().contains("App: Settings"))
         #expect(!step.brief().contains("You are in"))
         #expect(Step(goal: "g", screen: step.screen, app: home).brief().contains("App: Home Screen"))
+        let mixed = FrontmostApp(name: "springboard", bundleID: "COM.APPLE.SPRINGBOARD")
+        #expect(Step(goal: "g", screen: step.screen, app: mixed).brief().contains("App: Home Screen"))
+        let byName = FrontmostApp(name: "SpringBoard", bundleID: "")
+        #expect(Step(goal: "g", screen: step.screen, app: byName).brief().contains("App: Home Screen"))
     }
 
     @Test func readsActualAppEveryStep() async throws {

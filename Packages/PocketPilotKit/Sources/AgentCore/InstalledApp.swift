@@ -28,7 +28,10 @@ public struct FrontmostApp: Sendable, Hashable, Decodable {
 
     /// The name shown in the brief: SpringBoard is the Home Screen.
     public var briefName: String {
-        bundleID == "com.apple.springboard" ? "Home Screen" : name
+        let isSpringBoard =
+            bundleID.caseInsensitiveCompare("com.apple.springboard") == .orderedSame
+            || name.caseInsensitiveCompare("SpringBoard") == .orderedSame
+        return isSpringBoard ? "Home Screen" : name
     }
 
     enum CodingKeys: String, CodingKey {

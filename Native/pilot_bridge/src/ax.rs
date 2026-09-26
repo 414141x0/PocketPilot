@@ -265,6 +265,17 @@ impl AxClient {
     }
 
     pub(crate) async fn frontmost_app(&mut self) -> Result<Vec<u8>, String> {
+        let started = std::time::Instant::now();
+        let result = self.frontmost_app_inner().await;
+        eprintln!(
+            "pilot_bridge: frontmost_app {} in {}ms",
+            if result.is_ok() { "ok" } else { "err" },
+            started.elapsed().as_millis()
+        );
+        result
+    }
+
+    async fn frontmost_app_inner(&mut self) -> Result<Vec<u8>, String> {
         self.invoke(
             "deviceSetAppMonitoringEnabled:",
             vec![AuxValue::archived_value(true)],
@@ -280,6 +291,10 @@ impl AxClient {
     }
 
     async fn wait_for_frontmost_pid(&mut self) -> Result<i64, String> {
+        // Drain anything already queued (including a pid change from the last
+        // action) before trusting the cache. Returning SpringBoard after "open
+        // Clock" is the wander C15 exists to prevent.
+        self.drain_pending_host_events().await?;
         if let Some(pid) = self.frontmost_pid {
             return Ok(pid);
         }
@@ -298,6 +313,16 @@ impl AxClient {
             }
         }
         Err("timed out waiting for hostDeviceFrontmostAppPidDidChange:".into())
+    }
+
+    async fn drain_pending_host_events(&mut self) -> Result<(), String> {
+        loop {
+            match tokio::time::timeout(Duration::from_millis(20), self.dtx.read_message(0)).await {
+                Ok(Ok(message)) => self.note_host_event(&message),
+                Ok(Err(error)) => return Err(format!("AX event read failed: {error:?}")),
+                Err(_) => return Ok(()),
+            }
+        }
     }
 
     fn note_host_event(&mut self, message: &Message) {

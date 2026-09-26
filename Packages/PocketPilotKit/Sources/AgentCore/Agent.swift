@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "AgentCore")
 
 /// Drives a ``Device`` toward a goal by alternating observation, decision, and action.
 ///
@@ -72,7 +75,7 @@ public struct Agent: Sendable {
         while history.count < maxSteps {
             try Task.checkCancellation()
 
-            let app = try? await device.frontmostApp()
+            let app = await Self.readFrontmostApp(from: device)
             let screen = try await device.observe()
             if let previous, let last = history.indices.last, history[last].failure == nil,
                history[last].decision.action.expectsChange, screen.looksUnchanged(from: previous) {
@@ -138,6 +141,20 @@ public struct Agent: Sendable {
             return error.description
         } catch let error as DeviceError where error.isRecoverable {
             return error.description
+        }
+    }
+
+    private static func readFrontmostApp(from device: any Device) async -> FrontmostApp? {
+        let started = ContinuousClock.now
+        do {
+            let app = try await device.frontmostApp()
+            let ms = Int((ContinuousClock.now - started) / .milliseconds(1))
+            log.notice("frontmost app \(app?.briefName ?? "nil", privacy: .public) in \(ms)ms")
+            return app
+        } catch {
+            let ms = Int((ContinuousClock.now - started) / .milliseconds(1))
+            log.notice("frontmost app failed in \(ms)ms: \(String(describing: error), privacy: .public)")
+            return nil
         }
     }
 }
