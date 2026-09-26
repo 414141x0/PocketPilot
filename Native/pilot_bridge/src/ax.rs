@@ -234,6 +234,7 @@ impl AxClient {
             if message.data.as_ref().and_then(Value::as_string)
                 != Some("hostInspectorCurrentElementChanged:")
             {
+                log_incoming("snapshot", &message);
                 self.note_host_event(&message);
                 continue;
             }
@@ -282,6 +283,18 @@ impl AxClient {
         )
         .await?;
         let applications = self.request("deviceRunningApplications", vec![]).await?;
+        eprintln!(
+            "pilot_bridge: deviceRunningApplications type={:?}",
+            applications
+                .as_dictionary()
+                .and_then(|d| d.get("ObjectType"))
+                .and_then(Value::as_string)
+                .or_else(|| Some(if applications.as_array().is_some() {
+                    "array"
+                } else {
+                    "other"
+                }))
+        );
         let pid = self.wait_for_frontmost_pid().await?;
         let app = find_application(&applications, pid).ok_or_else(|| {
             format!("running applications had no name and bundle identifier for PID {pid}")
@@ -298,11 +311,12 @@ impl AxClient {
         if let Some(pid) = self.frontmost_pid {
             return Ok(pid);
         }
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(300);
         while tokio::time::Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             match tokio::time::timeout(remaining, self.dtx.read_message(0)).await {
                 Ok(Ok(message)) => {
+                    log_incoming("wait", &message);
                     self.note_host_event(&message);
                     if let Some(pid) = self.frontmost_pid {
                         return Ok(pid);
@@ -312,13 +326,16 @@ impl AxClient {
                 Err(_) => break,
             }
         }
-        Err("timed out waiting for hostDeviceFrontmostAppPidDidChange:".into())
+        Err("timed out waiting for hostDeviceFrontmostAppPidDidChange: (300ms)".into())
     }
 
     async fn drain_pending_host_events(&mut self) -> Result<(), String> {
         loop {
             match tokio::time::timeout(Duration::from_millis(20), self.dtx.read_message(0)).await {
-                Ok(Ok(message)) => self.note_host_event(&message),
+                Ok(Ok(message)) => {
+                    log_incoming("drain", &message);
+                    self.note_host_event(&message);
+                }
                 Ok(Err(error)) => return Err(format!("AX event read failed: {error:?}")),
                 Err(_) => return Ok(()),
             }
@@ -326,9 +343,12 @@ impl AxClient {
     }
 
     fn note_host_event(&mut self, message: &Message) {
-        if message.data.as_ref().and_then(Value::as_string)
-            != Some("hostDeviceFrontmostAppPidDidChange:")
-        {
+        let Some(selector) = message.data.as_ref().and_then(Value::as_string) else {
+            return;
+        };
+        let is_pid = selector == "hostDeviceFrontmostAppPidDidChange:"
+            || selector.contains("FrontmostAppPid");
+        if !is_pid {
             return;
         }
         if let Ok(Some(payload)) = decode_first_argument(message)
@@ -367,6 +387,7 @@ impl AxClient {
                     .map_err(|error| format!("AX response read failed: {error:?}"))?;
                 let incoming_selector = message.data.as_ref().and_then(Value::as_string);
                 if incoming_selector.is_some_and(|value| value.starts_with("host")) {
+                    log_incoming("request", &message);
                     self.note_host_event(&message);
                     continue;
                 }
@@ -482,6 +503,20 @@ async fn flush_initial_messages(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>
             break;
         }
     }
+}
+
+fn log_incoming(phase: &str, message: &Message) {
+    let selector = message
+        .data
+        .as_ref()
+        .and_then(Value::as_string)
+        .unwrap_or("<non-string>");
+    let aux = message
+        .aux
+        .as_ref()
+        .map(|aux| aux.values.len())
+        .unwrap_or(0);
+    eprintln!("pilot_bridge: AX {phase} selector={selector} aux={aux}");
 }
 
 fn passthrough(value: impl Into<Value>) -> Value {
