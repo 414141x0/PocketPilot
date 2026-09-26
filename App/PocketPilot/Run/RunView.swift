@@ -26,7 +26,7 @@ struct RunView: View {
                 if !setup.isReady {
                     SetupRequiredEmptyState(
                         hasPairing: setup.pairing != nil,
-                        hasAPIKey: !setup.openAIKey.isEmpty,
+                        hasAPIKey: setup.hasAPIKey,
                         brain: setup.brain,
                         onOpenSetup: { isShowingSetup = true }
                     )
@@ -212,6 +212,8 @@ private struct SetupRequiredEmptyState: View {
                         .foregroundStyle(.secondary)
                 } else if brain == .openAI && !hasAPIKey {
                     Text("Enter your OpenAI API key in Setup to use the cloud model.")
+                } else if brain == .gemini && !hasAPIKey {
+                    Text("Enter your Gemini API key in Setup to use the cloud model.")
                 }
             }
         } actions: {

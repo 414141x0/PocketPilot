@@ -14,6 +14,7 @@
 		A10000000000000000000105 /* RunActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000205 /* RunActivity */; };
 		A10000000000000000000106 /* RunActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000206 /* RunActivity */; };
 		A10000000000000000000107 /* PocketPilotActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000302 /* PocketPilotActivity.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000109 /* GeminiPilot in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000208 /* GeminiPilot */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +61,7 @@
 				A10000000000000000000103 /* OpenAIPilot in Frameworks */,
 				A10000000000000000000104 /* SystemPilot in Frameworks */,
 				A10000000000000000000105 /* RunActivity in Frameworks */,
+				A10000000000000000000109 /* GeminiPilot in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +121,7 @@
 				A10000000000000000000203 /* OpenAIPilot */,
 				A10000000000000000000204 /* SystemPilot */,
 				A10000000000000000000205 /* RunActivity */,
+				A10000000000000000000208 /* GeminiPilot */,
 			);
 			productName = PocketPilot;
 			productReference = A10000000000000000000301 /* PocketPilot.app */;
@@ -433,6 +436,10 @@
 		A10000000000000000000206 /* RunActivity */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RunActivity;
+		};
+		A10000000000000000000208 /* GeminiPilot */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GeminiPilot;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
