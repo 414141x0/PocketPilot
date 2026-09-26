@@ -111,7 +111,7 @@ extension Step {
         }
         if let remembered { head += "\n\nRemembered: \(remembered)" }
         if isReadOnly {
-            head += "\n\nMode: Read-only. Changing device state (typing, editing, toggling, deleting, saving, or submitting) is forbidden. Choose done or navigate safely."
+            head += "\n\nMode: Read-only. Changing device state (typing, editing, toggling, deleting, saving, or submitting) is forbidden. Choose done or navigate safely; point taps must land on an identified UI element."
         }
         return """
         \(head)

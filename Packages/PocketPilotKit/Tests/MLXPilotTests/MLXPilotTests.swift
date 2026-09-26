@@ -179,6 +179,21 @@ struct MLXPilotTests {
             )
             _ = try MLXDecisionSchema.reply(from: floatElement, on: emptyScreen())
         }
+
+        // Thought/action mismatch: thought plans to open app but action is tapPoint
+        let mismatchPoint = try GeneratedContent(
+            json: #"{"thought":"Next: open Weather.","action":{"type":"tapPoint","x":255,"y":450}}"#
+        )
+        #expect(throws: MLXDecisionSchemaError.self) {
+            _ = try MLXDecisionSchema.reply(from: mismatchPoint, on: emptyScreen())
+        }
+
+        // Thought/action agreement: thought plans to open app and action is open
+        let matchOpen = try GeneratedContent(
+            json: #"{"thought":"Next: open Weather.","action":{"type":"open","app":"Weather"}}"#
+        )
+        let openReply = try MLXDecisionSchema.reply(from: matchOpen, on: emptyScreen())
+        #expect(MLXPilot.mapDecision(openReply) == Decision(thought: "Next: open Weather.", action: .open(app: "Weather")))
     }
 
     @Test func initDoesNotStartANetworkDownload() throws {

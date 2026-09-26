@@ -16,7 +16,7 @@ public struct MLXPilot: Pilot {
     private static let minimumAvailableMemory = 3_250_000_000
     private static let initialElementLimit = 60
     private static let retryElementLimit = 30
-    private static let maximumResponseTokens = 256
+    private static let maximumResponseTokens = 128
 
     private let model: MLXLanguageModel
     public let maxHistoryTurns: Int
@@ -70,16 +70,21 @@ public struct MLXPilot: Pilot {
             var limits = (history: maxHistoryTurns, elements: Self.initialElementLimit)
             var correction: String?
             var reply: Reply?
+            var tokensIn = 0
+            var tokensOut = 0
             var parsingRetries = 0
             for attempt in 1 ... 2 {
                 do {
-                    reply = try await respond(
+                    let (parsedReply, inCount, outCount) = try await respond(
                         to: step,
                         image: image,
                         historyLimit: limits.history,
                         elementLimit: limits.elements,
                         correction: correction
                     )
+                    reply = parsedReply
+                    tokensIn = inCount
+                    tokensOut = outCount
                     break
                 } catch LanguageModelError.contextSizeExceeded(let context) where attempt == 1 {
                     limits = Self.contextRetryLimits(maxHistoryTurns: maxHistoryTurns)
@@ -104,7 +109,7 @@ public struct MLXPilot: Pilot {
                 throw MLXDecisionSchemaError.invalid("the correction retry produced no decision")
             }
             Self.log.info(
-                "Step \(step.number, privacy: .public) inference completed in \(Self.milliseconds(start.duration(to: clock.now)), privacy: .public) ms parsingRetries=\(parsingRetries, privacy: .public)"
+                "Step \(step.number, privacy: .public) inference completed in \(Self.milliseconds(start.duration(to: clock.now)), privacy: .public) ms (tokens: in=\(tokensIn, privacy: .public), out=\(tokensOut, privacy: .public), parsingRetries=\(parsingRetries, privacy: .public))"
             )
             return PilotDecisionSchema.map(reply)
         } catch {
@@ -121,7 +126,7 @@ public struct MLXPilot: Pilot {
         historyLimit: Int,
         elementLimit: Int,
         correction: String?
-    ) async throws -> Reply {
+    ) async throws -> (Reply, Int, Int) {
         var brief = step.brief(historyLimit: historyLimit, elementLimit: elementLimit)
         if let correction {
             brief += "\n\nYour previous decision was rejected. \(correction) Return one corrected decision now."
@@ -156,9 +161,10 @@ public struct MLXPilot: Pilot {
             )
         )
         Self.log.info(
-            "Step \(step.number, privacy: .public) raw content (\(response.usage.output.totalTokenCount, privacy: .public) tokens): \(response.content.jsonString, privacy: .public)"
+            "Step \(step.number, privacy: .public) raw content (in=\(response.usage.input.totalTokenCount, privacy: .public), out=\(response.usage.output.totalTokenCount, privacy: .public) tokens): \(response.content.jsonString, privacy: .public)"
         )
-        return try MLXDecisionSchema.reply(from: response.content, on: step.screen)
+        let reply = try MLXDecisionSchema.reply(from: response.content, on: step.screen)
+        return (reply, response.usage.input.totalTokenCount, response.usage.output.totalTokenCount)
     }
 
     static func contextRetryLimits(maxHistoryTurns: Int) -> (history: Int, elements: Int) {

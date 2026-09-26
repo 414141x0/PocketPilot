@@ -70,9 +70,9 @@ public enum ReadOnlyPolicy {
             return refusalReason(for: element, screen: screen)
 
         case .point(let point):
-            // Check if point lands inside any element that is forbidden
+            // Check if point lands inside any element that is forbidden (with 0.01 margin for OCR slop)
             for element in screen.elements {
-                if element.frame.contains(point), let reason = refusalReason(for: element, screen: screen) {
+                if element.frame.contains(point, margin: 0.01), let reason = refusalReason(for: element, screen: screen) {
                     return "Tapping at (\(point.x), \(point.y)) lands inside forbidden element '\(element.label)': \(reason)"
                 }
             }
@@ -82,6 +82,11 @@ public enum ReadOnlyPolicy {
                     return nil
                 }
                 return "Tapping in the keyboard or predictive bar area is forbidden in read-only mode."
+            }
+            // In read-only mode, any point-tap landing inside NO known element frame is refused
+            let hitsKnownElement = screen.elements.contains { $0.frame.contains(point) }
+            if !hitsKnownElement {
+                return "Point tap at (\(point.x), \(point.y)) does not hit any known element. In read-only mode, taps must land on an identified UI element."
             }
             return nil
         }

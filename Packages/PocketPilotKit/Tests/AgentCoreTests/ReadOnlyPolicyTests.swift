@@ -135,23 +135,34 @@ import Testing
         #expect(ReadOnlyPolicy.refusal(for: .tap(.element(4)), on: normalScreen) == nil)
     }
 
-    @Test func refusesPointTapsLandingInMutatingFrames() {
+    @Test func refusesPointTapsLandingInMutatingFramesAndUnknownRegions() {
         let toggle = Element(id: 1, role: .toggle, label: "WiFi", frame: Rect(x: 0.7, y: 0.2, width: 0.2, height: 0.1))
         let saveBtn = Element(id: 2, role: .button, label: "Save", frame: Rect(x: 0.1, y: 0.05, width: 0.2, height: 0.05))
-        let screen = makeDummyScreen(elements: [toggle, saveBtn])
+        let safeTab = Element(id: 3, role: .tab, label: "Alarms", frame: Rect(x: 0.4, y: 0.8, width: 0.2, height: 0.1))
+        let screen = makeDummyScreen(elements: [toggle, saveBtn, safeTab])
 
         // Landing inside toggle
         let tapInToggle = ReadOnlyPolicy.refusal(for: .tap(.point(Point(x: 0.75, y: 0.25))), on: screen)
         #expect(tapInToggle != nil)
         #expect(tapInToggle?.contains("WiFi") == true)
 
+        // Landing inside 0.01 margin of toggle (x = 0.695 is 0.005 outside origin.x 0.70)
+        let tapInMargin = ReadOnlyPolicy.refusal(for: .tap(.point(Point(x: 0.695, y: 0.25))), on: screen)
+        #expect(tapInMargin != nil)
+        #expect(tapInMargin?.contains("WiFi") == true)
+
         // Landing inside Save button
         let tapInSave = ReadOnlyPolicy.refusal(for: .tap(.point(Point(x: 0.15, y: 0.06))), on: screen)
         #expect(tapInSave != nil)
         #expect(tapInSave?.contains("Save") == true)
 
-        // Landing in empty safe area
-        #expect(ReadOnlyPolicy.refusal(for: .tap(.point(Point(x: 0.5, y: 0.5))), on: screen) == nil)
+        // Landing on a known safe element
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.point(Point(x: 0.5, y: 0.85))), on: screen) == nil)
+
+        // Landing in empty area with no known element is refused
+        let tapInEmpty = ReadOnlyPolicy.refusal(for: .tap(.point(Point(x: 0.5, y: 0.5))), on: screen)
+        #expect(tapInEmpty != nil)
+        #expect(tapInEmpty?.contains("does not hit any known element") == true)
     }
 
     @Test func refusesScrollIntoSlider() {

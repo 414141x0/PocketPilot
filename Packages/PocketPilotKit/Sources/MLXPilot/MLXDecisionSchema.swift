@@ -15,8 +15,8 @@ enum MLXDecisionSchema {
         let actionType = DynamicGenerationSchema(
             name: "ActionType",
             anyOf: [
-                "tap", "tapPoint", "longPress", "scroll", "drag", "type",
-                "press", "key", "open", "wait", "done", "giveUp",
+                "open", "done", "press", "tap", "tapPoint", "type", "key",
+                "scroll", "drag", "longPress", "wait", "giveUp",
             ]
         )
         let heading = DynamicGenerationSchema(
@@ -41,21 +41,21 @@ enum MLXDecisionSchema {
             description: "Exactly one iPhone action. Include only the fields that action needs.",
             properties: [
                 .init(name: "type", schema: actionType),
+                .init(name: "app", schema: string, isOptional: true),
+                .init(name: "summary", schema: string, isOptional: true),
                 .init(name: "element", description: "A visible element id.", schema: element, isOptional: true),
                 .init(name: "x", description: "Grid x coordinate.", schema: coordinate, isOptional: true),
                 .init(name: "y", description: "Grid y coordinate.", schema: coordinate, isOptional: true),
+                .init(name: "button", schema: button, isOptional: true),
+                .init(name: "name", schema: key, isOptional: true),
+                .init(name: "text", schema: string, isOptional: true),
+                .init(name: "replacing", description: "When true, clears existing text before typing.", schema: DynamicGenerationSchema(type: Bool.self), isOptional: true),
+                .init(name: "direction", schema: heading, isOptional: true),
                 .init(name: "fromX", schema: coordinate, isOptional: true),
                 .init(name: "fromY", schema: coordinate, isOptional: true),
                 .init(name: "toX", schema: coordinate, isOptional: true),
                 .init(name: "toY", schema: coordinate, isOptional: true),
-                .init(name: "direction", schema: heading, isOptional: true),
-                .init(name: "text", schema: string, isOptional: true),
-                .init(name: "replacing", description: "When true, clears existing text before typing.", schema: DynamicGenerationSchema(type: Bool.self), isOptional: true),
-                .init(name: "button", schema: button, isOptional: true),
-                .init(name: "name", schema: key, isOptional: true),
-                .init(name: "app", schema: string, isOptional: true),
                 .init(name: "seconds", schema: seconds, isOptional: true),
-                .init(name: "summary", schema: string, isOptional: true),
                 .init(name: "reason", schema: string, isOptional: true),
             ]
         )
@@ -85,6 +85,9 @@ enum MLXDecisionSchema {
 
         let action: GeneratedContent = try content.value(forProperty: "action")
         let type: String = try action.value(forProperty: "type")
+        if isOpeningAppIntent(thought: thought), type != "open" {
+            throw MLXDecisionSchemaError.invalid("thought planned to open an app, but action type was '\(type)'; use action type 'open' with the app name")
+        }
         let choice: Choice
         switch type {
         case "tap":
@@ -189,6 +192,13 @@ enum MLXDecisionSchema {
     private static func hasProperty(_ name: String, in content: GeneratedContent) -> Bool {
         guard case .structure(let properties, _) = content.kind else { return false }
         return properties[name] != nil
+    }
+
+    private static func isOpeningAppIntent(thought: String) -> Bool {
+        let lower = thought.lowercased()
+        guard let nextRange = lower.range(of: "next:") else { return false }
+        let nextPart = lower[nextRange.upperBound...].trimmingCharacters(in: .whitespaces)
+        return nextPart.starts(with: "open ")
     }
 }
 
