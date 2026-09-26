@@ -63,6 +63,12 @@ final class RunModel {
     var isRunning: Bool { task != nil }
     var connectionState: Connection.State { connection.state }
 
+    /// Probe a live session after the app resumes; reconnect if the tunnel died.
+    func refreshSession(pairing: PairingFile) async {
+        guard !isRunning else { return }
+        await connection.refresh(pairing: pairing)
+    }
+
     /// Connects on first use, then drives the chosen pilot toward `goal`.
     func start(_ goal: String, pairing: PairingFile, pilot: any Pilot) {
         guard !isRunning else { return }
