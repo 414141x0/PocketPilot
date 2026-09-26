@@ -65,6 +65,59 @@ private extension Screenshot {
     }
 }
 
+@Suite struct ToggleButtonTwinTests {
+    @Test func keepsToggleAndDropsButtonTwin() {
+        let time = Element(id: 1, role: .text, label: "5:35 AM", frame: Rect(x: 0.1, y: 0.4, width: 0.3, height: 0.04))
+        let nodes = [
+            AccessibilityNode(role: "Switch Button", label: "5:35 AM, Alarm, 0, Toggle"),
+            AccessibilityNode(role: "Button", label: "5:35 AM, Alarm Button, Toggle"),
+        ]
+
+        let screen = Screen(screenshot: .blank, merging: nodes, onto: [time])
+
+        #expect(screen.elements.map(\.role) == [.toggle])
+        #expect(screen.elements.map(\.label) == ["5:35 AM, Alarm, 0, Toggle"])
+        #expect(screen.unlocated.isEmpty)
+    }
+
+    @Test func buttonListedBeforeToggleStillKeepsToggle() {
+        let time = Element(id: 1, role: .text, label: "5:35 AM", frame: Rect(x: 0.1, y: 0.4, width: 0.3, height: 0.04))
+        let nodes = [
+            AccessibilityNode(role: "Button", label: "5:35 AM, Alarm Button, Toggle"),
+            AccessibilityNode(role: "Switch Button", label: "5:35 AM, Alarm, 0, Toggle"),
+        ]
+
+        let screen = Screen(screenshot: .blank, merging: nodes, onto: [time])
+
+        #expect(screen.elements.map(\.role) == [.toggle])
+        #expect(screen.unlocated.isEmpty)
+    }
+
+    @Test func collapseFiresWhenBothTwinsHaveIntersectingFrames() {
+        let time = Element(id: 1, role: .text, label: "5:35 AM", frame: Rect(x: 0.1, y: 0.4, width: 0.3, height: 0.04))
+        let alarm = Element(id: 2, role: .text, label: "Alarm", frame: Rect(x: 0.15, y: 0.41, width: 0.2, height: 0.03))
+        let nodes = [
+            AccessibilityNode(role: "Switch Button", label: "5:35 AM, Alarm, 0, Toggle"),
+            AccessibilityNode(role: "Button", label: "5:35 AM, Alarm Button, Toggle"),
+        ]
+
+        let screen = Screen(screenshot: .blank, merging: nodes, onto: [time, alarm])
+
+        #expect(screen.elements.map(\.role) == [.toggle])
+        #expect(screen.unlocated.isEmpty)
+    }
+
+    @Test func doesNotCollapseDistantSameStemButtons() {
+        let upper = Element(id: 1, role: .text, label: "Close", frame: Rect(x: 0.8, y: 0.1, width: 0.1, height: 0.02))
+        let lower = Element(id: 2, role: .text, label: "Close", frame: Rect(x: 0.8, y: 0.6, width: 0.1, height: 0.02))
+        let nodes = [AccessibilityNode(role: "Button", label: "Close"), AccessibilityNode(role: "Button", label: "Close")]
+
+        let screen = Screen(screenshot: .blank, merging: nodes, onto: [upper, lower])
+
+        #expect(screen.elements.map(\.frame) == [upper.frame, lower.frame])
+    }
+}
+
 @Suite struct DuplicateLabelTests {
     @Test func repeatedLabelsPairInOrder() {
         let upper = Element(id: 1, role: .text, label: "Close", frame: Rect(x: 0.8, y: 0.1, width: 0.1, height: 0.02))
