@@ -95,6 +95,9 @@ struct RunView: View {
                 if ProcessInfo.processInfo.environment["POCKETPILOT_LINK_PROBE"] != nil, let pairing = setup.pairing {
                     await LinkProbe.run(pairing: pairing)
                 }
+                if let goal = ProcessInfo.processInfo.environment["POCKETPILOT_PILOT_PROBE"], let pairing = setup.pairing {
+                    await PilotProbe.run(goal: goal, pairing: pairing, pilot: setup.pilot)
+                }
                 if ProcessInfo.processInfo.environment["POCKETPILOT_MODEL_PROBE"] != nil, let pairing = setup.pairing {
                     await ModelProbe.run(pairing: pairing)
                 }
