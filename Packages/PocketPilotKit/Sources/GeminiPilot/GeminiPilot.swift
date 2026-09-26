@@ -29,15 +29,15 @@ public struct GeminiPilot: Pilot {
         ]
         if let jpegData = await step.screen.markedScreenshot().jpeg() {
             userParts.append([
-                "inline_data": [
-                    "mime_type": "image/jpeg",
+                "inlineData": [
+                    "mimeType": "image/jpeg",
                     "data": jpegData.base64EncodedString()
                 ]
             ])
         }
 
         let body: [String: Any] = [
-            "system_instruction": [
+            "systemInstruction": [
                 "parts": [
                     ["text": Self.instructions]
                 ]
@@ -251,7 +251,7 @@ public struct GeminiPilot: Pilot {
             case "type":
                 self = .type(
                     text: try c.decode(String.self, forKey: .text),
-                    replacing: try c.decode(Bool.self, forKey: .replacing)
+                    replacing: try c.decodeIfPresent(Bool.self, forKey: .replacing) ?? false
                 )
             case "press":
                 self = .press(button: try c.decode(HardwareButton.self, forKey: .button))

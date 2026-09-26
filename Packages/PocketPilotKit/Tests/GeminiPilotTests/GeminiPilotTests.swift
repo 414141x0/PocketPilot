@@ -153,8 +153,8 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
 
-        // system_instruction present
-        let systemInstruction = bodyObj["system_instruction"] as? [String: Any]
+        // systemInstruction present
+        let systemInstruction = bodyObj["systemInstruction"] as? [String: Any]
         #expect(systemInstruction != nil)
 
         // contents with user role
@@ -166,11 +166,11 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         }
         #expect(firstContent["role"] as? String == "user")
 
-        // Contains text part and inline_data image part
+        // Contains text part and inlineData image part
         let hasTextPart = parts.contains { ($0["text"] as? String) != nil }
         let hasImagePart = parts.contains { part in
-            guard let inline = part["inline_data"] as? [String: Any] else { return false }
-            return inline["mime_type"] as? String == "image/jpeg" && (inline["data"] as? String) != nil
+            guard let inline = part["inlineData"] as? [String: Any] else { return false }
+            return inline["mimeType"] as? String == "image/jpeg" && (inline["data"] as? String) != nil
         }
         #expect(hasTextPart)
         #expect(hasImagePart)
@@ -196,6 +196,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             (#"{"kind":"drag","from_x":100,"from_y":200,"to_x":300,"to_y":400}"#, .drag(from: .point(Point(grid: 100, 200)), to: .point(Point(grid: 300, 400)))),
             (#"{"kind":"type","text":"Hello World","replacing":true}"#, .type("Hello World", replacing: true)),
             (#"{"kind":"type","text":"Quick","replacing":false}"#, .type("Quick", replacing: false)),
+            (#"{"kind":"type","text":"Omitted Replacing"}"#, .type("Omitted Replacing", replacing: false)),
             (#"{"kind":"press","button":"home"}"#, .press(.home)),
             (#"{"kind":"press","button":"lock"}"#, .press(.lock)),
             (#"{"kind":"key","key":"return"}"#, .key(.return)),
