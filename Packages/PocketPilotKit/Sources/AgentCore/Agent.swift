@@ -91,6 +91,7 @@ public struct Agent: Sendable {
             try await Task.sleep(for: settle)
         }
         var consecutiveReadOnlyRefusals = 0
+        var consecutiveDecideFailures = 0
         while history.count < maxSteps {
             try Task.checkCancellation()
 
@@ -132,7 +133,25 @@ public struct Agent: Sendable {
                 return .completed(summary: "Opened \(named).")
             }
 
-            let decision = try await pilot.decide(step)
+            let decision: Decision
+            do {
+                decision = try await pilot.decide(step)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                consecutiveDecideFailures += 1
+                let reason = "The last decision could not be used: \(error.localizedDescription)"
+                if consecutiveDecideFailures >= 3 {
+                    return .abandoned(reason: reason)
+                }
+                let skipped = Decision(thought: "The last decision could not be used.", action: .wait(seconds: 0))
+                onEvent(.decided(skipped))
+                onEvent(.failed(skipped.action, reason: reason))
+                history.append(Turn(decision: skipped, failure: reason))
+                try await Task.sleep(for: settle)
+                continue
+            }
+            consecutiveDecideFailures = 0
             if let keep = decision.keepFacts { remembered = keep }
             onEvent(.decided(decision))
 
