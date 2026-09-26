@@ -41,7 +41,7 @@ enum MLXDecisionSchema {
             description: "Exactly one iPhone action. Include only the fields that action needs.",
             properties: [
                 .init(name: "type", schema: actionType),
-                .init(name: "app", schema: string, isOptional: true),
+                .init(name: "app", description: "The app name to open, or \"\" if not opening an app.", schema: string),
                 .init(name: "summary", schema: string, isOptional: true),
                 .init(name: "element", description: "A visible element id.", schema: element, isOptional: true),
                 .init(name: "x", description: "Grid x coordinate.", schema: coordinate, isOptional: true),
@@ -147,7 +147,25 @@ enum MLXDecisionSchema {
             }
             choice = .key(name: name)
         case "open":
-            choice = .open(app: try nonemptyString("app", in: action))
+            let rawApp: String? = hasProperty("app", in: action) ? (try? action.value(forProperty: "app")) : nil
+            let trimmedApp = rawApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmedApp.isEmpty {
+                choice = .open(app: trimmedApp)
+            } else if hasProperty("element", in: action) {
+                let id = try elementID(in: action, on: screen)
+                if let element = screen[id] {
+                    let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !label.isEmpty {
+                        choice = .open(app: label)
+                    } else {
+                        choice = .tap(element: id)
+                    }
+                } else {
+                    choice = .tap(element: id)
+                }
+            } else {
+                throw MLXDecisionSchemaError.invalid("open action requires an app name or visible element id")
+            }
         case "wait":
             let value: Double = try action.value(forProperty: "seconds")
             guard value.isFinite, 0.25 ... 10 ~= value else {

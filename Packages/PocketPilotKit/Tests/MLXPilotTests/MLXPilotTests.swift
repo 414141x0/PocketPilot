@@ -194,6 +194,28 @@ struct MLXPilotTests {
         )
         let openReply = try MLXDecisionSchema.reply(from: matchOpen, on: emptyScreen())
         #expect(MLXPilot.mapDecision(openReply) == Decision(thought: "Next: open Weather.", action: .open(app: "Weather")))
+
+        // Open without app name but with valid element label recovers open(app: label)
+        let weatherScreen = Screen(
+            screenshot: Screenshot(image: emptyScreen().screenshot.image),
+            elements: [Element(id: 1, role: .button, label: "Weather", frame: Rect(x: 0.1, y: 0.1, width: 0.2, height: 0.1))]
+        )
+        let openElement = try GeneratedContent(
+            json: #"{"thought":"Next: open the Weather app.","action":{"type":"open","element":1}}"#
+        )
+        let openElementReply = try MLXDecisionSchema.reply(from: openElement, on: weatherScreen)
+        #expect(MLXPilot.mapDecision(openElementReply) == Decision(thought: "Next: open the Weather app.", action: .open(app: "Weather")))
+
+        // Open without app name with empty element label falls back to tap(element:)
+        let unlabeledScreen = Screen(
+            screenshot: Screenshot(image: emptyScreen().screenshot.image),
+            elements: [Element(id: 1, role: .button, label: "", frame: Rect(x: 0.1, y: 0.1, width: 0.2, height: 0.1))]
+        )
+        let openUnlabeled = try GeneratedContent(
+            json: #"{"thought":"Open something","action":{"type":"open","element":1}}"#
+        )
+        let openUnlabeledReply = try MLXDecisionSchema.reply(from: openUnlabeled, on: unlabeledScreen)
+        #expect(MLXPilot.mapDecision(openUnlabeledReply) == Decision(thought: "Open something", action: .tap(.element(1))))
     }
 
     @Test func initDoesNotStartANetworkDownload() throws {
