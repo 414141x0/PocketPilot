@@ -16,7 +16,8 @@ struct SetupView: View {
             )
             ModelSection(
                 brain: $setup.brain,
-                openAIKey: $setup.openAIKey
+                openAIKey: $setup.openAIKey,
+                geminiKey: $setup.geminiKey
             )
         }
         .navigationTitle("Setup")
@@ -70,25 +71,43 @@ private struct DeviceSection: View {
 private struct ModelSection: View {
     @Binding var brain: Setup.Brain
     @Binding var openAIKey: String
+    @Binding var geminiKey: String
 
     private let onDeviceNote: LocalizedStringResource = "Runs entirely on this iPhone with Apple's on-device model."
     private let openAINote: LocalizedStringResource = "Sends each screenshot to OpenAI. Your API key is stored in the Keychain."
+    private let geminiNote: LocalizedStringResource = "Sends each screenshot to Google Gemini. Your API key is stored in the Keychain."
 
     var body: some View {
         Section {
             Picker("Pilot", selection: $brain) {
                 Text("On-Device").tag(Setup.Brain.onDevice)
                 Text("OpenAI").tag(Setup.Brain.openAI)
+                Text("Gemini").tag(Setup.Brain.gemini)
             }
-            if brain == .openAI {
+            switch brain {
+            case .openAI:
                 SecureField("API Key", text: $openAIKey)
                     .textContentType(.password)
                     .autocorrectionDisabled()
+            case .gemini:
+                SecureField("API Key", text: $geminiKey)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+            case .onDevice:
+                EmptyView()
             }
         } header: {
             Text("Model")
         } footer: {
-            Text(brain == .onDevice ? onDeviceNote : openAINote)
+            Text(footerNote)
+        }
+    }
+
+    private var footerNote: LocalizedStringResource {
+        switch brain {
+        case .onDevice: onDeviceNote
+        case .openAI: openAINote
+        case .gemini: geminiNote
         }
     }
 }
