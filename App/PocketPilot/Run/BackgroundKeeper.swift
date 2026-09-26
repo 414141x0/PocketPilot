@@ -17,7 +17,7 @@ import UIKit
 /// app backgrounds mid-run; its pause button stops the run.
 @MainActor
 final class BackgroundKeeper: NSObject {
-    private static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
+    private nonisolated static let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "KeepAlive")
     // Small on purpose: the PiP window covers part of the screen the agent
     // reads, so the card defaults compact and every run stashes it at an edge.
     private static let cardSize = CGSize(width: 240, height: 120)
