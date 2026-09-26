@@ -19,9 +19,7 @@ final class RunModel {
         /// What to tell the user once a run has ended.
         var conclusion: String? {
             switch self {
-            case .finished(.completed(let summary)): summary
-            case .finished(.abandoned(let reason)): reason
-            case .finished(.outOfSteps): String(localized: "Stopped after reaching the step limit.")
+            case .finished(let outcome): outcome.displayLine
             case .failed(let message): message
             case .idle, .connecting, .running: nil
             }
