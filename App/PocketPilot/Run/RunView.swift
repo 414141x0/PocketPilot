@@ -83,8 +83,17 @@ struct RunView: View {
             .task {
                 isShowingSetup = !setup.isReady
                 #if DEBUG
-                if ProcessInfo.processInfo.environment["POCKETPILOT_PROBE"] != nil {
-                    await PortProbe.run()
+                switch ProcessInfo.processInfo.environment["POCKETPILOT_PROBE"] {
+                case "full": await PortProbe.scanAll()
+                case .some: await PortProbe.run()
+                case nil:
+                    if FileManager.default.fileExists(atPath: PortProbe.requestURL.path()) {
+                        try? FileManager.default.removeItem(at: PortProbe.requestURL)
+                        await PortProbe.scanAll()
+                    }
+                }
+                if ProcessInfo.processInfo.environment["POCKETPILOT_LINK_PROBE"] != nil, let pairing = setup.pairing {
+                    await LinkProbe.run(pairing: pairing)
                 }
                 if ProcessInfo.processInfo.environment["POCKETPILOT_MODEL_PROBE"] != nil, let pairing = setup.pairing {
                     await ModelProbe.run(pairing: pairing)
