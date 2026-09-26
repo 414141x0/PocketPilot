@@ -35,6 +35,24 @@ const REMOTE_PAIRING_TCP_TIMEOUT: Duration = Duration::from_secs(5);
 const REMOTE_PAIRING_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const VIDEO_SENDER_PORT: u16 = 50_001;
 
+/// `QOS_CLASS_USER_INITIATED` from `<sys/qos.h>`. The session thread ACKs jktcp;
+/// a 25s MLX step can starve a default-QoS thread so the 6.2s retransmit budget expires.
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+const QOS_CLASS_USER_INITIATED: u32 = 0x19;
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+fn apply_session_thread_qos() {
+    let result = unsafe { pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0) };
+    if result != 0 {
+        eprintln!("pilot_bridge: pthread_set_qos_class_self_np failed: {result}");
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+unsafe extern "C" {
+    fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+}
+
 /// Error categories returned by PilotBridge. The message carries operation-specific detail.
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -1185,7 +1203,15 @@ pub unsafe extern "C" fn pp_session_open(
     let thread = std::thread::Builder::new()
         .name("PocketPilot session".into())
         .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            #[cfg(any(target_os = "ios", target_os = "macos"))]
+            apply_session_thread_qos();
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_name("PocketPilot tokio")
+                .on_thread_start(|| {
+                    #[cfg(any(target_os = "ios", target_os = "macos"))]
+                    apply_session_thread_qos();
+                })
                 .enable_all()
                 .build();
             match runtime {
@@ -1667,6 +1693,12 @@ mod tests {
 
         assert_eq!(capture.error, Some(PP_Error::Ok));
         assert_eq!(capture.message.as_deref(), Some(CLIPBOARD_REPLACED_NOTE));
+    }
+
+    #[test]
+    fn session_qos_class_is_user_initiated() {
+        assert_eq!(QOS_CLASS_USER_INITIATED, 0x19);
+        apply_session_thread_qos();
     }
 
     #[test]
