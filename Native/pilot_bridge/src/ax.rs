@@ -188,7 +188,11 @@ impl AxClient {
             vec![AuxValue::archived_value(0_i64)],
         )
         .await?;
-        self.move_next().await?;
+        // Monitoring (re)enables the Inspector overlay; turn it off again before
+        // the walk, after each move, and after the walk so the next screenshot
+        // does not capture the leftover highlight.
+        self.disable_inspector_highlight().await?;
+        self.advance_focus().await?;
 
         let mut builder = SnapshotBuilder::default();
         let mut visited_focus_tokens = HashSet::new();
@@ -211,7 +215,7 @@ impl AxClient {
                     if consecutive_timeouts >= 5 {
                         return Err("timed out waiting for accessibility focus events".into());
                     }
-                    self.move_next().await?;
+                    self.advance_focus().await?;
                     continue;
                 }
             };
@@ -240,8 +244,9 @@ impl AxClient {
                 builder.merge_tree(&tree, 0);
             }
             builder.merge_focus(&payload);
-            self.move_next().await?;
+            self.advance_focus().await?;
         }
+        self.disable_inspector_highlight().await?;
 
         serde_json::to_vec(&builder.elements)
             .map_err(|error| format!("AX JSON serialization failed: {error}"))
@@ -314,6 +319,11 @@ impl AxClient {
             ],
         )
         .await
+    }
+
+    async fn advance_focus(&mut self) -> Result<(), String> {
+        self.move_next().await?;
+        self.disable_inspector_highlight().await
     }
 
     async fn move_next(&mut self) -> Result<(), String> {
