@@ -18,6 +18,7 @@ private let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "Agen
 public struct Agent: Sendable {
     public var device: any Device
     public var pilot: any Pilot
+    public var policy: RunPolicy
     public var maxSteps: Int
     /// Time given to the UI to finish animating before the next observation.
     public var settle: Duration
@@ -35,6 +36,7 @@ public struct Agent: Sendable {
     public init(
         device: some Device,
         pilot: some Pilot,
+        policy: RunPolicy = .default,
         maxSteps: Int = 40,
         settle: Duration = .milliseconds(700),
         preparation: [Gesture] = [],
@@ -42,6 +44,7 @@ public struct Agent: Sendable {
     ) {
         self.device = device
         self.pilot = pilot
+        self.policy = policy
         self.maxSteps = maxSteps
         self.settle = settle
         self.preparation = preparation
@@ -62,6 +65,7 @@ public struct Agent: Sendable {
     }
 
     public func run(_ goal: String, onEvent: (Event) -> Void = { _ in }) async throws -> Outcome {
+        let isReadOnly = policy.isReadOnly(for: goal)
         var history: [Turn] = []
         var previous: Screen?
         var visits: [[Element]: Int] = [:]
@@ -69,6 +73,9 @@ public struct Agent: Sendable {
         let apps = (try? await device.installedApps()) ?? []
         let mentionedApps = apps.named(in: goal)
         for gesture in preparation {
+            if isReadOnly && ReadOnlyPolicy.isMutating(gesture: gesture) {
+                continue
+            }
             try await device.perform(gesture)
             try await Task.sleep(for: settle)
         }
@@ -97,7 +104,15 @@ public struct Agent: Sendable {
                 }
             }
 
-            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps, app: app)
+            let step = Step(
+                goal: goal,
+                screen: screen,
+                history: history,
+                remembered: remembered,
+                mentionedApps: mentionedApps,
+                app: app,
+                isReadOnly: isReadOnly
+            )
             onEvent(.observed(step))
 
             if let named = OpenGoal.mentionedFrontmost(app: app, mentioned: mentionedApps),
@@ -118,7 +133,7 @@ public struct Agent: Sendable {
 
             var turn = Turn(decision: decision, failure: history.repeatedFailure(of: decision.action))
             if turn.failure == nil {
-                turn.failure = try await perform(decision.action, on: step.screen, apps: apps)
+                turn.failure = try await perform(decision.action, on: step.screen, apps: apps, isReadOnly: isReadOnly)
             }
             if let failure = turn.failure {
                 onEvent(.failed(decision.action, reason: failure))
@@ -131,7 +146,15 @@ public struct Agent: Sendable {
 
     /// Performs `action`, returning a description of any failure the pilot can recover from.
     /// Failures that make further progress impossible are thrown.
-    private func perform(_ action: Action, on screen: Screen, apps: [InstalledApp]) async throws -> String? {
+    private func perform(
+        _ action: Action,
+        on screen: Screen,
+        apps: [InstalledApp],
+        isReadOnly: Bool
+    ) async throws -> String? {
+        if isReadOnly, let refusal = ReadOnlyPolicy.refusal(for: action, on: screen) {
+            return refusal
+        }
         do {
             if case .type(let text, replacing: true) = action {
                 for gesture in [Gesture.selectAll, .key(.delete), .type(text)] {

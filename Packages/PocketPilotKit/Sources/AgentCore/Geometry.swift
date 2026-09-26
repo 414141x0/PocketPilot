@@ -26,6 +26,12 @@ public struct Rect: Sendable, Hashable, Codable {
 
     public var center: Point { Point(x: origin.x + width / 2, y: origin.y + height / 2) }
     public var isEmpty: Bool { width <= 0 || height <= 0 }
+
+    /// Whether this rectangle contains `point` (unit coordinates).
+    public func contains(_ point: Point) -> Bool {
+        point.x >= origin.x && point.x <= origin.x + width &&
+        point.y >= origin.y && point.y <= origin.y + height
+    }
 }
 
 extension Comparable {
