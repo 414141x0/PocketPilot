@@ -100,6 +100,11 @@ public struct Agent: Sendable {
             let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps, app: app)
             onEvent(.observed(step))
 
+            if let named = OpenGoal.mentionedFrontmost(app: app, mentioned: mentionedApps),
+               OpenGoal.isPureOpen(goal, app: named) {
+                return .completed(summary: "Opened \(named).")
+            }
+
             let decision = try await pilot.decide(step)
             if let keep = decision.keepFacts { remembered = keep }
             onEvent(.decided(decision))

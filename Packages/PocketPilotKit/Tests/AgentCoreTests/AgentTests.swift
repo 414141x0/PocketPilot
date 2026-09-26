@@ -434,18 +434,63 @@ private actor AlternatingDevice: Device {
             .resolved(using: [InstalledApp(name: "Clock", bundleID: "com.apple.mobiletimer")])
         #expect(Step(goal: "g", screen: step.screen, app: timer).brief().contains("App: Clock"))
         #expect(!Step(goal: "g", screen: step.screen, app: timer).brief().contains("MobileTimer"))
+        let clock = FrontmostApp(name: "Clock", bundleID: "com.apple.mobiletimer")
+        let reached = Step(goal: "Open the Clock app, then finish. Do not change anything.", screen: step.screen, mentionedApps: ["Clock"], app: clock)
+        #expect(reached.brief().contains("The Clock app is open now. If the goal was only to open it, choose done."))
+        #expect(!Step(goal: "Open Clock", screen: step.screen, mentionedApps: ["Clock"], app: settings).brief().contains("is open now"))
+    }
+
+    @Test func autoFinishesPureOpenWhenThatAppIsFrontmost() async throws {
+        let pilot = ExplodingPilot()
+        let device = ClockAlreadyOpenDevice()
+        let outcome = try await Agent(device: device, pilot: pilot, settle: .zero)
+            .run("Open the Clock app, then finish. Do not change anything.")
+        #expect(outcome == .completed(summary: "Opened Clock."))
+        #expect(await pilot.decided == false)
+    }
+
+    @Test func doesNotAutoFinishWhenGoalAsksForMoreThanOpen() async throws {
+        let pilot = ScriptedPilot(.giveUp(reason: "x"))
+        let device = ClockAlreadyOpenDevice()
+        let outcome = try await Agent(device: device, pilot: pilot, settle: .zero)
+            .run("Open the Clock app and turn on the 5:35 AM alarm")
+        #expect(outcome == .abandoned(reason: "x"))
+        #expect(await pilot.apps.count == 1)
     }
 
     @Test func readsActualAppEveryStep() async throws {
         let pilot = ScriptedPilot(.open(app: "settings"), .press(.home), .giveUp(reason: "x"))
         let device = AppListingDevice()
-        _ = try await Agent(device: device, pilot: pilot, settle: .zero, preparation: [.press(.home)]).run("Open Settings")
+        _ = try await Agent(device: device, pilot: pilot, settle: .zero, preparation: [.press(.home)]).run("Open Settings and show Wi-Fi")
 
         #expect(await pilot.apps == [
             FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard"),
             FrontmostApp(name: "Settings", bundleID: "com.apple.Preferences"),
             FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard"),
         ])
+    }
+}
+
+private actor ExplodingPilot: Pilot {
+    var decided = false
+    func decide(_ step: Step) async throws -> Decision {
+        decided = true
+        Issue.record("pilot should not be asked when a pure open-goal is already reached")
+        return Decision(thought: "x", action: .giveUp(reason: "x"))
+    }
+}
+
+private actor ClockAlreadyOpenDevice: Device {
+    func observe() throws(DeviceError) -> Screen {
+        Screen(screenshot: .blank(width: 1, height: 1),
+               elements: [Element(id: 1, role: .text, label: "World Clock", frame: .fullScreen)])
+    }
+    func perform(_ gesture: Gesture) throws(DeviceError) {}
+    func installedApps() throws(DeviceError) -> [InstalledApp] {
+        [InstalledApp(name: "Clock", bundleID: "com.apple.mobiletimer")]
+    }
+    func frontmostApp() throws(DeviceError) -> FrontmostApp? {
+        FrontmostApp(name: "Clock", bundleID: "com.apple.mobiletimer")
     }
 }
 
