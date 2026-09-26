@@ -167,14 +167,14 @@ private actor ScriptedPilot: Pilot {
     private var script: [Action]
     private let fallback: Action?
     private(set) var lastHistory: [Turn] = []
-    private(set) var locations: [String?] = []
+    private(set) var apps: [FrontmostApp?] = []
 
     init(_ script: Action...) { self.script = script; fallback = nil }
     init(repeating action: Action) { script = []; fallback = action }
 
     func decide(_ step: Step) -> Decision {
         lastHistory = step.history
-        locations.append(step.location)
+        apps.append(step.app)
         let action = script.isEmpty ? fallback! : script.removeFirst()
         return Decision(action: action)
     }
@@ -419,17 +419,31 @@ private actor AlternatingDevice: Device {
 }
 
 @Suite struct LocationTests {
-    @Test func tracksOpenedAppAndHome() async throws {
+    @Test func briefUsesLiveFrontmostApp() {
+        let settings = FrontmostApp(name: "Settings", bundleID: "com.apple.Preferences")
+        let home = FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard")
+        let step = Step(goal: "g", screen: Screen(screenshot: .blank(width: 1, height: 1)), app: settings)
+        #expect(step.brief().contains("App: Settings"))
+        #expect(!step.brief().contains("You are in"))
+        #expect(Step(goal: "g", screen: step.screen, app: home).brief().contains("App: Home Screen"))
+    }
+
+    @Test func readsActualAppEveryStep() async throws {
         let pilot = ScriptedPilot(.open(app: "settings"), .press(.home), .giveUp(reason: "x"))
         let device = AppListingDevice()
         _ = try await Agent(device: device, pilot: pilot, settle: .zero, preparation: [.press(.home)]).run("Open Settings")
 
-        #expect(await pilot.locations == ["Home Screen", "Settings", "Home Screen"])
+        #expect(await pilot.apps == [
+            FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard"),
+            FrontmostApp(name: "Settings", bundleID: "com.apple.Preferences"),
+            FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard"),
+        ])
     }
 }
 
 private actor AppListingDevice: Device {
     private var step = 0
+    private var appIndex = 0
     func observe() throws(DeviceError) -> Screen {
         step += 1
         return Screen(screenshot: .blank(width: 1, height: 1),
@@ -437,6 +451,14 @@ private actor AppListingDevice: Device {
     }
     func perform(_ gesture: Gesture) throws(DeviceError) {}
     func installedApps() throws(DeviceError) -> [InstalledApp] { [InstalledApp(name: "Settings", bundleID: "com.apple.Preferences")] }
+    func frontmostApp() throws(DeviceError) -> FrontmostApp? {
+        defer { appIndex += 1 }
+        return [
+            FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard"),
+            FrontmostApp(name: "Settings", bundleID: "com.apple.Preferences"),
+            FrontmostApp(name: "SpringBoard", bundleID: "com.apple.springboard"),
+        ][appIndex]
+    }
 }
 
 @Suite struct TypedTextConfirmationTests {

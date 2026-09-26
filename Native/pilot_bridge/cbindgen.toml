@@ -25,6 +25,7 @@ include = [
     "pp_launch_app",
     "pp_list_apps",
     "pp_screen_size",
+    "pp_frontmost_app",
     "pp_ax_snapshot",
 ]
 

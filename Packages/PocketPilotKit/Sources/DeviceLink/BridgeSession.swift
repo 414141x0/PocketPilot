@@ -93,6 +93,15 @@ final class BridgeSession: Sendable {
         }
     }
 
+    func frontmostApp() async throws(DeviceError) -> FrontmostApp? {
+        let json = try await bytes { pp_frontmost_app(handle, $0, $1) }
+        do {
+            return try JSONDecoder().decode(FrontmostApp.self, from: json)
+        } catch {
+            throw .service("Unreadable frontmost app: \(error)")
+        }
+    }
+
     /// A PNG of the display, used when ScreenCaptureKit is unavailable.
     func screenshot() async throws(DeviceError) -> Data {
         try await bytes { pp_screenshot(handle, $0, $1) }
