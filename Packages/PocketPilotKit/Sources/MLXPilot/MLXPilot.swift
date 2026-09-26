@@ -16,7 +16,7 @@ public struct MLXPilot: Pilot {
     private static let minimumAvailableMemory = 3_250_000_000
     private static let initialElementLimit = 60
     private static let retryElementLimit = 30
-    private static let maximumResponseTokens = 128
+    private static let maximumResponseTokens = 256
 
     private let model: MLXLanguageModel
     public let maxHistoryTurns: Int
@@ -70,6 +70,7 @@ public struct MLXPilot: Pilot {
             var limits = (history: maxHistoryTurns, elements: Self.initialElementLimit)
             var correction: String?
             var reply: Reply?
+            var parsingRetries = 0
             for attempt in 1 ... 2 {
                 do {
                     reply = try await respond(
@@ -86,11 +87,13 @@ public struct MLXPilot: Pilot {
                         "Step \(step.number, privacy: .public) exceeded \(context.contextSize, privacy: .public) tokens with \(context.tokenCount, privacy: .public); retrying with history \(limits.history, privacy: .public) and \(limits.elements, privacy: .public) elements"
                     )
                 } catch let error as GeneratedContent.ParsingError where attempt == 1 {
+                    parsingRetries += 1
                     correction = Self.correction(for: error)
                     Self.log.notice(
                         "Step \(step.number, privacy: .public) produced malformed structured content; retrying once: \(String(describing: error), privacy: .public)"
                     )
                 } catch let error as MLXDecisionSchemaError where attempt == 1 {
+                    parsingRetries += 1
                     correction = Self.correction(for: error)
                     Self.log.notice(
                         "Step \(step.number, privacy: .public) produced an invalid decision; retrying once: \(String(describing: error), privacy: .public)"
@@ -101,7 +104,7 @@ public struct MLXPilot: Pilot {
                 throw MLXDecisionSchemaError.invalid("the correction retry produced no decision")
             }
             Self.log.info(
-                "Step \(step.number, privacy: .public) inference completed in \(Self.milliseconds(start.duration(to: clock.now)), privacy: .public) ms"
+                "Step \(step.number, privacy: .public) inference completed in \(Self.milliseconds(start.duration(to: clock.now)), privacy: .public) ms parsingRetries=\(parsingRetries, privacy: .public)"
             )
             return PilotDecisionSchema.map(reply)
         } catch {
@@ -152,6 +155,8 @@ public struct MLXPilot: Pilot {
                 maximumResponseTokens: Self.maximumResponseTokens
             )
         )
+        let rawDescription = String(describing: response.content)
+        Self.log.debug("Step \(step.number, privacy: .public) raw content: \(rawDescription, privacy: .public)")
         return try MLXDecisionSchema.reply(from: response.content, on: step.screen)
     }
 

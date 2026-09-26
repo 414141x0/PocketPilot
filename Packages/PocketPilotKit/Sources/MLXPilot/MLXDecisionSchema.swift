@@ -50,6 +50,7 @@ enum MLXDecisionSchema {
                 .init(name: "toY", schema: coordinate, isOptional: true),
                 .init(name: "direction", schema: heading, isOptional: true),
                 .init(name: "text", schema: string, isOptional: true),
+                .init(name: "replacing", description: "When true, clears existing text before typing.", schema: DynamicGenerationSchema(type: Bool.self), isOptional: true),
                 .init(name: "button", schema: button, isOptional: true),
                 .init(name: "name", schema: key, isOptional: true),
                 .init(name: "app", schema: string, isOptional: true),
@@ -118,7 +119,10 @@ enum MLXDecisionSchema {
                 toY: try coordinate("toY", in: action)
             )
         case "type":
-            choice = .type(text: try nonemptyString("text", in: action))
+            let replacing: Bool = hasProperty("replacing", in: action)
+                ? (try action.value(forProperty: "replacing"))
+                : false
+            choice = .type(text: try nonemptyString("text", in: action), replacing: replacing)
         case "press":
             let raw: String = try action.value(forProperty: "button")
             let button: Key = switch raw {

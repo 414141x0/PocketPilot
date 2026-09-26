@@ -14,7 +14,8 @@ import Testing
                 .drag(fromX: 200, fromY: 500, toX: 800, toY: 500),
                 .drag(from: .point(Point(grid: 200, 500)), to: .point(Point(grid: 800, 500)))
             ),
-            (.type(text: "Hello World"), .type("Hello World")),
+            (.type(text: "Hello World", replacing: false), .type("Hello World", replacing: false)),
+            (.type(text: "Replace me", replacing: true), .type("Replace me", replacing: true)),
             (.press(button: .home), .press(.home)),
             (.press(button: .lock), .press(.lock)),
             (.press(button: .volumeUp), .press(.volumeUp)),

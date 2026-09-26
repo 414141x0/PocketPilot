@@ -58,7 +58,7 @@ public struct Reply: Sendable {
     case longPress(element: Int)
     case scroll(direction: Heading, element: Int?)
     case drag(fromX: Int, fromY: Int, toX: Int, toY: Int)
-    case type(text: String)
+    case type(text: String, replacing: Bool)
     case press(button: Key)
     case key(name: KeyName)
     case open(app: String)
@@ -78,7 +78,7 @@ public enum PilotDecisionSchema {
             .scroll(direction.toDirection(), in: id.map { .element($0) })
         case .drag(let fromX, let fromY, let toX, let toY):
             .drag(from: .point(Point(grid: fromX, fromY)), to: .point(Point(grid: toX, toY)))
-        case .type(let text): .type(text)
+        case .type(let text, let replacing): .type(text, replacing: replacing)
         case .press(let button): .press(button.toButton())
         case .key(let name): .key(name.key)
         case .open(let app): .open(app: app)
