@@ -216,6 +216,36 @@ struct MLXPilotTests {
         )
         let openUnlabeledReply = try MLXDecisionSchema.reply(from: openUnlabeled, on: unlabeledScreen)
         #expect(MLXPilot.mapDecision(openUnlabeledReply) == Decision(thought: "Open something", action: .tap(.element(1))))
+
+        // Open with numeric element id in app field (device incident: {"app":"1","type":"open"}) recovers element label
+        let clockScreen = Screen(
+            screenshot: Screenshot(image: emptyScreen().screenshot.image),
+            elements: [Element(id: 1, role: .button, label: "Clock", frame: Rect(x: 0.1, y: 0.1, width: 0.2, height: 0.1))]
+        )
+        let openNumericApp = try GeneratedContent(
+            json: #"{"thought":"Next: open Clock","action":{"type":"open","app":"1"}}"#
+        )
+        let openNumericReply = try MLXDecisionSchema.reply(from: openNumericApp, on: clockScreen)
+        #expect(MLXPilot.mapDecision(openNumericReply) == Decision(thought: "Next: open Clock", action: .open(app: "Clock")))
+
+        // Grammar bleed regex detects suspicious trailing digit before bracket
+        let bleedRegex = #"\d[\}\]]"#
+        #expect("...Next1}".range(of: bleedRegex, options: .regularExpression) != nil)
+        #expect("Did: Op1]".range(of: bleedRegex, options: .regularExpression) != nil)
+        #expect("Next: open Clock".range(of: bleedRegex, options: .regularExpression) == nil)
+    }
+
+    @Test func dynamicSchemaConstrainsAppEnumAndElementRange() throws {
+        let schema = MLXDecisionSchema.generationSchema(
+            apps: ["", "Weather", "Clock"],
+            elementIDs: [3, 7, 12]
+        )
+        let data = try JSONEncoder().encode(schema)
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(json.contains("\"Weather\""))
+        #expect(json.contains("\"Clock\""))
+        #expect(json.contains(#""minimum":3"#))
+        #expect(json.contains(#""maximum":12"#))
     }
 
     @Test func initDoesNotStartANetworkDownload() throws {

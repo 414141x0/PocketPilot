@@ -11,7 +11,14 @@ import PilotSchema
 /// before it ever reaches the required thought. This flat action envelope bounds every numeric
 /// field, then converts back to the shared `Reply` before mapping to `Action`.
 enum MLXDecisionSchema {
-    static let generationSchema: GenerationSchema = {
+    static var generationSchema: GenerationSchema {
+        generationSchema(apps: [], elementIDs: [])
+    }
+
+    static func generationSchema(
+        apps: [String] = [],
+        elementIDs: [Int] = []
+    ) -> GenerationSchema {
         let actionType = DynamicGenerationSchema(
             name: "ActionType",
             anyOf: [
@@ -31,17 +38,31 @@ enum MLXDecisionSchema {
             name: "KeyName",
             anyOf: ["return", "tab", "escape", "delete"]
         )
-        let element = DynamicGenerationSchema(type: Int.self, guides: [.range(1 ... 300)])
+        let element: DynamicGenerationSchema
+        if !elementIDs.isEmpty {
+            let minID = max(1, elementIDs.min()!)
+            let maxID = max(minID, elementIDs.max()!)
+            element = DynamicGenerationSchema(type: Int.self, guides: [.range(minID ... maxID)])
+        } else {
+            element = DynamicGenerationSchema(type: Int.self, guides: [.range(1 ... 300)])
+        }
         let coordinate = DynamicGenerationSchema(type: Int.self, guides: [.range(0 ... 1_000)])
         let seconds = DynamicGenerationSchema(type: Double.self, guides: [.range(0.25 ... 10)])
         let string = DynamicGenerationSchema(type: String.self)
+
+        let appSchema: DynamicGenerationSchema
+        if !apps.isEmpty {
+            appSchema = DynamicGenerationSchema(name: "AppName", anyOf: apps)
+        } else {
+            appSchema = string
+        }
 
         let action = DynamicGenerationSchema(
             name: "MLXAction",
             description: "Exactly one iPhone action. Include only the fields that action needs.",
             properties: [
                 .init(name: "type", schema: actionType),
-                .init(name: "app", description: "The app name to open, or \"\" if not opening an app.", schema: string),
+                .init(name: "app", description: "The app name to open, or \"\" if not opening an app.", schema: appSchema),
                 .init(name: "summary", schema: string, isOptional: true),
                 .init(name: "element", description: "A visible element id.", schema: element, isOptional: true),
                 .init(name: "x", description: "Grid x coordinate.", schema: coordinate, isOptional: true),
@@ -72,7 +93,7 @@ enum MLXDecisionSchema {
             ]
         )
         return try! GenerationSchema(root: root, dependencies: [])
-    }()
+    }
 
     static func reply(from content: GeneratedContent, on screen: Screen) throws -> Reply {
         let rawThought: String = try content.value(forProperty: "thought")
@@ -150,7 +171,16 @@ enum MLXDecisionSchema {
             let rawApp: String? = hasProperty("app", in: action) ? (try? action.value(forProperty: "app")) : nil
             let trimmedApp = rawApp?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !trimmedApp.isEmpty {
-                choice = .open(app: trimmedApp)
+                if let elementID = Int(trimmedApp), let element = screen[elementID] {
+                    let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !label.isEmpty {
+                        choice = .open(app: label)
+                    } else {
+                        choice = .open(app: trimmedApp)
+                    }
+                } else {
+                    choice = .open(app: trimmedApp)
+                }
             } else if hasProperty("element", in: action) {
                 let id = try elementID(in: action, on: screen)
                 if let element = screen[id] {

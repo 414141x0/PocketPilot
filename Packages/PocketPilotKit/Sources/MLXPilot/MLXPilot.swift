@@ -152,19 +152,64 @@ public struct MLXPilot: Pilot {
             }
         }
         defer { watchdog.cancel() }
+        var appCandidates: [String] = [""]
+        for app in step.mentionedApps {
+            let trimmed = app.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !appCandidates.contains(trimmed) {
+                appCandidates.append(trimmed)
+            }
+        }
+        for app in step.installedApps {
+            let trimmed = app.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && !appCandidates.contains(trimmed) {
+                appCandidates.append(trimmed)
+            }
+        }
+        for element in step.screen.elements {
+            let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !label.isEmpty && label.count <= 30 && !label.contains("\n") && !appCandidates.contains(label) {
+                appCandidates.append(label)
+            }
+        }
+        let dynamicApps = appCandidates.count > 1 ? Array(appCandidates.prefix(61)) : []
+        let visibleIDs = step.screen.elements.map(\.id)
+        let schema = MLXDecisionSchema.generationSchema(apps: dynamicApps, elementIDs: visibleIDs)
+
         let response = try await session.respond(
             to: prompt,
-            schema: MLXDecisionSchema.generationSchema,
+            schema: schema,
             options: GenerationOptions(
                 temperature: 0.2,
                 maximumResponseTokens: Self.maximumResponseTokens
             )
         )
+        let rawJSON = response.content.jsonString
+        let inCount = response.usage.input.totalTokenCount
+        let outCount = response.usage.output.totalTokenCount
         Self.log.info(
-            "Step \(step.number, privacy: .public) raw content (in=\(response.usage.input.totalTokenCount, privacy: .public), out=\(response.usage.output.totalTokenCount, privacy: .public) tokens): \(response.content.jsonString, privacy: .public)"
+            "Step \(step.number, privacy: .public) raw content (in=\(inCount, privacy: .public), out=\(outCount, privacy: .public) tokens): \(rawJSON, privacy: .public)"
         )
+        if outCount == 59 {
+            Self.log.notice(
+                "Step \(step.number, privacy: .public) generated exactly 59 output tokens (investigating fixed-count stop)"
+            )
+        } else if outCount >= Self.maximumResponseTokens - 4 {
+            Self.log.warning(
+                "Step \(step.number, privacy: .public) output tokens (\(outCount, privacy: .public)) near cap (\(Self.maximumResponseTokens, privacy: .public)); potential truncation"
+            )
+        }
+        let rawThought: String? = try? response.content.value(forProperty: "thought")
+        if let rawThought, rawThought.range(of: #"\d[\}\]]"#, options: .regularExpression) != nil {
+            let bytes = [UInt8](rawJSON.utf8)
+            Self.log.debug(
+                "Suspicious thought grammar bleed in Step \(step.number, privacy: .public) ('\(rawThought, privacy: .public)'): raw bytes (\(bytes.count, privacy: .public)): \(bytes, privacy: .public)"
+            )
+            Self.log.notice(
+                "Grammar bleed pattern in Step \(step.number, privacy: .public) thought; raw hex: \(bytes.map { String(format: "%02x", $0) }.joined(), privacy: .public)"
+            )
+        }
         let reply = try MLXDecisionSchema.reply(from: response.content, on: step.screen)
-        return (reply, response.usage.input.totalTokenCount, response.usage.output.totalTokenCount)
+        return (reply, inCount, outCount)
     }
 
     static func contextRetryLimits(maxHistoryTurns: Int) -> (history: Int, elements: Int) {

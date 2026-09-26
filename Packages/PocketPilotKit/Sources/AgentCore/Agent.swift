@@ -123,6 +123,7 @@ public struct Agent: Sendable {
                 history: history,
                 remembered: remembered,
                 mentionedApps: mentionedApps,
+                installedApps: apps.map(\.name),
                 app: app,
                 isReadOnly: isReadOnly
             )

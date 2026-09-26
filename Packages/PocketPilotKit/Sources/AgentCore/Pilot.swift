@@ -18,6 +18,8 @@ public struct Step: Sendable {
     public var remembered: String?
     /// Installed apps the goal names, which small models otherwise fail to reach with `open`.
     public var mentionedApps: [String]
+    /// All installed apps on the device, to constrain pilot schemas and aid resolution.
+    public var installedApps: [String]
     /// The app actually owning the foreground UI at observation time.
     public var app: FrontmostApp?
     /// Whether this step is being executed under read-only policy.
@@ -29,6 +31,7 @@ public struct Step: Sendable {
         history: [Turn] = [],
         remembered: String? = nil,
         mentionedApps: [String] = [],
+        installedApps: [String] = [],
         app: FrontmostApp? = nil,
         isReadOnly: Bool = false
     ) {
@@ -37,6 +40,7 @@ public struct Step: Sendable {
         self.history = history
         self.remembered = remembered
         self.mentionedApps = mentionedApps
+        self.installedApps = installedApps
         self.app = app
         self.isReadOnly = isReadOnly
     }
