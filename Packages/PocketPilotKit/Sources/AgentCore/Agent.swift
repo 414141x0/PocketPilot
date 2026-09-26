@@ -132,7 +132,20 @@ public struct Agent: Sendable {
                 return .completed(summary: "Opened \(named).")
             }
 
-            let decision = try await pilot.decide(step)
+            let decision: Decision
+            do {
+                decision = try await pilot.decide(step)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                let reason = "The last decision could not be used: \(error.localizedDescription)"
+                let skipped = Decision(thought: "The last decision could not be used.", action: .wait(seconds: 0))
+                onEvent(.decided(skipped))
+                onEvent(.failed(skipped.action, reason: reason))
+                history.append(Turn(decision: skipped, failure: reason))
+                try await Task.sleep(for: settle)
+                continue
+            }
             if let keep = decision.keepFacts { remembered = keep }
             onEvent(.decided(decision))
 

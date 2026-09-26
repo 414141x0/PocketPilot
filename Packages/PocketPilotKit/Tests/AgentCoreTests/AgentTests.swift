@@ -34,6 +34,13 @@ import Testing
         }
     }
 
+    @Test func continuesAfterABadDecision() async throws {
+        let pilot = RecoveringPilot()
+        let outcome = try await Agent(device: FakeDevice(), pilot: pilot, settle: .zero).run("Open Weather")
+        #expect(outcome == .completed(summary: "recovered"))
+        #expect(await pilot.calls == 2)
+    }
+
     @Test func stopsAtStepLimit() async throws {
         let pilot = ScriptedPilot(repeating: .wait(seconds: 0))
         let outcome = try await Agent(device: FakeDevice(), pilot: pilot, maxSteps: 3, settle: .zero).run("Loop")
@@ -177,6 +184,19 @@ private actor ScriptedPilot: Pilot {
         apps.append(step.app)
         let action = script.isEmpty ? fallback! : script.removeFirst()
         return Decision(action: action)
+    }
+}
+
+private struct ParseError: Error, LocalizedError {
+    var errorDescription: String? { "missing app" }
+}
+
+private actor RecoveringPilot: Pilot {
+    var calls = 0
+    func decide(_ step: Step) async throws -> Decision {
+        calls += 1
+        if calls == 1 { throw ParseError() }
+        return Decision(thought: "ok", action: .done(summary: "recovered"))
     }
 }
 
