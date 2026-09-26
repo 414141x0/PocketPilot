@@ -55,10 +55,20 @@ extension Screen {
             merged.append(text)
         }
 
-        let locatedStems = Set(merged.map { Self.roleStem($0.label) }.filter { !$0.isEmpty })
         unlocated.removeAll { entry in
-            guard let label = Self.label(inUnlocated: entry) else { return false }
-            return locatedStems.contains(Self.roleStem(label))
+            guard let label = Self.label(inUnlocated: entry),
+                  let role = Self.role(inUnlocated: entry) else { return false }
+            let stem = Self.roleStem(label)
+            guard !stem.isEmpty else { return false }
+            if role == .button {
+                return merged.contains { $0.role == .toggle && Self.roleStem($0.label) == stem }
+            }
+            if role == .toggle, let index = merged.firstIndex(where: { $0.role == .button && Self.roleStem($0.label) == stem }) {
+                merged[index].role = .toggle
+                merged[index].label = label
+                return true
+            }
+            return false
         }
         self.init(screenshot: screenshot, elements: merged, unlocated: unlocated)
     }
@@ -111,6 +121,11 @@ extension Screen {
             return nil
         }
         return String(entry[entry.index(after: start)..<end])
+    }
+
+    static func role(inUnlocated entry: String) -> Element.Role? {
+        guard let quote = entry.firstIndex(of: "\"") else { return nil }
+        return Element.Role(rawValue: String(entry[..<quote].trimmingCharacters(in: .whitespaces)))
     }
 
     /// Hint phrases VoiceOver appends to labels, which say nothing about what an element is.
