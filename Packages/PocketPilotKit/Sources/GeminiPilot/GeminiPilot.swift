@@ -1,10 +1,15 @@
 public import AgentCore
 public import Foundation
 
-/// A pilot that queries Google's Gemini generateContent REST API to choose device actions.
+/// A pilot that asks Google Gemini, through the Interactions API, to choose device actions.
+///
+/// Each step is one stateless interaction: the brief and marked screenshot go in, a decision
+/// comes back as schema-constrained JSON. `store` is off so screenshots of the user's phone
+/// are not kept server-side. References (checked 2026-09-26):
+/// https://ai.google.dev/api/interactions-api and https://ai.google.dev/gemini-api/docs/structured-output
 public struct GeminiPilot: Pilot {
-    /// Default model id: gemini-2.5-flash is Google's current best price-performance vision-capable model.
-    /// Documentation: https://ai.google.dev/gemini-api/docs/models/gemini
+    /// Defaults to gemini-3.8-flash, Google's current Flash model; 2.5 models are limited to
+    /// accounts that already used them (https://ai.google.dev/gemini-api/docs/models).
     public let model: String
     private let apiKey: String
     private let session: URLSession
@@ -13,7 +18,7 @@ public struct GeminiPilot: Pilot {
 
     public init(
         apiKey: String,
-        model: String = "gemini-2.5-flash",
+        model: String = "gemini-3.8-flash",
         session: URLSession = .shared,
         retryDelay: Duration = .seconds(1)
     ) {
@@ -24,41 +29,33 @@ public struct GeminiPilot: Pilot {
     }
 
     public func decide(_ step: Step) async throws -> Decision {
-        var userParts: [[String: Any]] = [
-            ["text": step.brief()]
+        var input: [[String: Any]] = [
+            ["type": "text", "text": step.brief()]
         ]
         if let jpegData = await step.screen.markedScreenshot().jpeg() {
-            userParts.append([
-                "inline_data": [
-                    "mime_type": "image/jpeg",
-                    "data": jpegData.base64EncodedString()
-                ]
+            input.append([
+                "type": "image",
+                "mime_type": "image/jpeg",
+                "data": jpegData.base64EncodedString()
             ])
         }
 
         let body: [String: Any] = [
-            "system_instruction": [
-                "parts": [
-                    ["text": Self.instructions]
-                ]
+            "model": model,
+            "system_instruction": Self.instructions,
+            "input": input,
+            "response_format": [
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": Self.decisionJsonSchema
             ],
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": userParts
-                ]
-            ],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "responseJsonSchema": Self.decisionJsonSchema
-            ]
+            // Gemini 3 rejects "minimal"; low keeps each step quick. Sampling knobs such as
+            // temperature are not accepted on Gemini 3 and later, so none are sent.
+            "generation_config": ["thinking_level": "low"],
+            "store": false
         ]
 
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
-            throw GeminiPilotError.invalidResponse
-        }
-
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: Self.endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // The API key is sent ONLY in the x-goog-api-key header, never in the URL to avoid log leakage.
@@ -118,11 +115,26 @@ public struct GeminiPilot: Pilot {
         return String(data: data, encoding: .utf8)?.prefix(200).description
     }
 
+    static let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/interactions")!
+
     static func parseDecision(from data: Data) throws -> Decision {
-        let response = try JSONDecoder().decode(GeminiGenerateContentResponse.self, from: data)
-        guard let candidate = response.candidates?.first,
-              let text = candidate.content?.parts?.compactMap(\.text).first(where: { !$0.isEmpty }) else {
-            throw GeminiPilotError.malformedResponse("No text content found in candidates")
+        let response: Interaction
+        do {
+            response = try JSONDecoder().decode(Interaction.self, from: data)
+        } catch {
+            throw GeminiPilotError.malformedResponse("Not an interaction: \(error.localizedDescription)")
+        }
+        guard response.status == "completed" else {
+            throw GeminiPilotError.malformedResponse("Interaction ended with status \(response.status ?? "missing")")
+        }
+        let text = (response.steps ?? [])
+            .filter { $0.type == "model_output" }
+            .flatMap { $0.content ?? [] }
+            .filter { $0.type == "text" }
+            .compactMap(\.text)
+            .joined()
+        guard !text.isEmpty else {
+            throw GeminiPilotError.malformedResponse("No model output text")
         }
 
         guard let textData = text.data(using: .utf8) else {
@@ -137,7 +149,7 @@ public struct GeminiPilot: Pilot {
         }
     }
 
-    /// JSON schema using responseJsonSchema standard specification to support anyOf action definitions.
+    /// The decision schema, within the subset the Interactions API accepts (anyOf and enum, no const).
     static var decisionJsonSchema: [String: Any] {
         [
             "type": "object",
@@ -162,8 +174,8 @@ public struct GeminiPilot: Pilot {
             actionSchema("long_press", ["element_id": ["type": "integer"]]),
             actionSchema("scroll", [
                 "direction": ["type": "string", "enum": ["up", "down", "left", "right"]],
-                "element_id": ["type": ["integer", "null"]]
-            ]),
+                "element_id": ["type": "integer"]
+            ], optional: ["element_id"]),
             actionSchema("drag", [
                 "from_x": ["type": "integer"],
                 "from_y": ["type": "integer"],
@@ -189,13 +201,14 @@ public struct GeminiPilot: Pilot {
         ]
     }
 
-    private static func actionSchema(_ kind: String, _ properties: [String: Any] = [:]) -> [String: Any] {
+    /// One action branch. The kind is a single-value enum because the schema subset has no `const`.
+    private static func actionSchema(_ kind: String, _ properties: [String: Any] = [:], optional: Set<String> = []) -> [String: Any] {
         var props = properties
         props["kind"] = ["type": "string", "enum": [kind]]
         return [
             "type": "object",
             "properties": props,
-            "required": Array(props.keys).sorted(),
+            "required": props.keys.filter { !optional.contains($0) }.sorted(),
             "additionalProperties": false
         ]
     }
@@ -251,7 +264,7 @@ public struct GeminiPilot: Pilot {
             case "type":
                 self = .type(
                     text: try c.decode(String.self, forKey: .text),
-                    replacing: try c.decode(Bool.self, forKey: .replacing)
+                    replacing: try c.decodeIfPresent(Bool.self, forKey: .replacing) ?? false
                 )
             case "press":
                 self = .press(button: try c.decode(HardwareButton.self, forKey: .button))
@@ -296,19 +309,18 @@ public struct GeminiPilot: Pilot {
     }
 }
 
-private struct GeminiGenerateContentResponse: Decodable {
-    struct Candidate: Decodable {
+/// The parts of an Interactions API response a single-turn decision needs.
+private struct Interaction: Decodable {
+    struct Step: Decodable {
         struct Content: Decodable {
-            struct Part: Decodable {
-                var text: String?
-            }
-            var parts: [Part]?
-            var role: String?
+            var type: String?
+            var text: String?
         }
-        var content: Content?
-        var finishReason: String?
+        var type: String?
+        var content: [Content]?
     }
-    var candidates: [Candidate]?
+    var status: String?
+    var steps: [Step]?
 }
 
 private struct GeminiErrorResponse: Decodable {

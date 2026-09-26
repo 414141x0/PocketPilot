@@ -98,30 +98,30 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
 
-        let geminiResponse = """
+        return interaction(status: "completed", text: escapedReply)
+    }
+
+    /// An Interactions API response in the steps shape (the default since 2026-05-26).
+    private func interaction(status: String, text: String?) -> Data {
+        let content = text.map { #"[{"type": "text", "text": "\#($0)"}]"# } ?? "[]"
+        return """
         {
-          "candidates": [
-            {
-              "content": {
-                "parts": [
-                  {
-                    "text": "\(escapedReply)"
-                  }
-                ],
-                "role": "model"
-              },
-              "finishReason": "STOP"
-            }
-          ]
+          "id": "v1_test",
+          "status": "\(status)",
+          "steps": [
+            {"type": "thought", "content": []},
+            {"type": "model_output", "content": \(content)}
+          ],
+          "usage": {"total_input_tokens": 1200, "total_output_tokens": 40, "total_tokens": 1240}
         }
-        """
-        return geminiResponse.data(using: .utf8)!
+        """.data(using: .utf8)!
     }
 
     @Test func requestShapeCarriesKeyInHeaderNotURLImagePartAndSchema() async throws {
         let session = makeSession()
         let apiKey = "test-secret-gemini-key"
-        let pilot = GeminiPilot(apiKey: apiKey, model: "gemini-2.5-flash", session: session, retryDelay: .milliseconds(1))
+        let pilot = GeminiPilot(apiKey: apiKey, session: session, retryDelay: .milliseconds(1))
+        #expect(pilot.model == "gemini-3.8-flash")
 
         MockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
@@ -143,47 +143,70 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         #expect(!request.url!.absoluteString.contains(apiKey))
 
         // 2. URL matches expected endpoint
-        #expect(request.url?.absoluteString == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+        #expect(request.url?.absoluteString == "https://generativelanguage.googleapis.com/v1beta/interactions")
         #expect(request.httpMethod == "POST")
 
-        // 3. Inspect body structure
         guard let bodyData = request.httpBody,
-              let bodyObj = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+              let body = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
             Issue.record("Expected JSON body")
             return
         }
+        #expect(body["model"] as? String == "gemini-3.8-flash")
+        #expect((body["system_instruction"] as? String)?.isEmpty == false)
+        // Screenshots of the user's phone must not be kept server-side.
+        #expect(body["store"] as? Bool == false)
+        #expect(body["previous_interaction_id"] == nil)
 
-        // system_instruction present
-        let systemInstruction = bodyObj["system_instruction"] as? [String: Any]
-        #expect(systemInstruction != nil)
+        let input = body["input"] as? [[String: Any]] ?? []
+        #expect(input.contains { $0["type"] as? String == "text" && ($0["text"] as? String)?.isEmpty == false })
+        #expect(input.contains { $0["type"] as? String == "image" && $0["mime_type"] as? String == "image/jpeg" && $0["data"] is String })
 
-        // contents with user role
-        guard let contents = bodyObj["contents"] as? [[String: Any]],
-              let firstContent = contents.first,
-              let parts = firstContent["parts"] as? [[String: Any]] else {
-            Issue.record("Expected contents and parts in body")
-            return
+        let format = body["response_format"] as? [String: Any]
+        #expect(format?["type"] as? String == "text")
+        #expect(format?["mime_type"] as? String == "application/json")
+        #expect((format?["schema"] as? [String: Any])?["type"] as? String == "object")
+
+        let config = body["generation_config"] as? [String: Any]
+        #expect(config?["thinking_level"] as? String == "low")
+        for removed in ["temperature", "top_p", "top_k", "candidate_count"] {
+            #expect(config?[removed] == nil)
         }
-        #expect(firstContent["role"] as? String == "user")
+        // The only place the key may appear is its header.
+        #expect(!String(decoding: bodyData, as: UTF8.self).contains(apiKey))
+    }
 
-        // Contains text part and inline_data image part
-        let hasTextPart = parts.contains { ($0["text"] as? String) != nil }
-        let hasImagePart = parts.contains { part in
-            guard let inline = part["inline_data"] as? [String: Any] else { return false }
-            return inline["mime_type"] as? String == "image/jpeg" && (inline["data"] as? String) != nil
+    @Test func omittedReplacingDefaultsToFalseAndScrollTargetIsOptional() async throws {
+        let session = makeSession()
+        let pilot = GeminiPilot(apiKey: "key", session: session, retryDelay: .milliseconds(1))
+        for (actionJSON, expected) in [
+            (#"{"kind":"type","text":"hi"}"#, Action.type("hi", replacing: false)),
+            (#"{"kind":"scroll","direction":"down"}"#, Action.scroll(.down, in: nil)),
+        ] {
+            MockURLProtocol.requestHandler = { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                 self.makeGeminiSuccessResponse(thought: "t", actionJSON: actionJSON))
+            }
+            #expect(try await pilot.decide(makeStep()).action == expected)
         }
-        #expect(hasTextPart)
-        #expect(hasImagePart)
+    }
 
-        // generationConfig with schema
-        guard let genConfig = bodyObj["generationConfig"] as? [String: Any] else {
-            Issue.record("Expected generationConfig in body")
-            return
+    @Test func unfinishedOrEmptyInteractionIsMalformed() async throws {
+        let session = makeSession()
+        let pilot = GeminiPilot(apiKey: "key", session: session, retryDelay: .milliseconds(1))
+        for data in [interaction(status: "failed", text: nil), interaction(status: "incomplete", text: "{}"), interaction(status: "completed", text: nil)] {
+            MockURLProtocol.requestHandler = { request in
+                (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
+            }
+            do {
+                _ = try await pilot.decide(makeStep())
+                Issue.record("Expected malformed response")
+            } catch let error as GeminiPilotError {
+                guard case .malformedResponse = error else {
+                    Issue.record("Expected .malformedResponse, got \(error)")
+                    continue
+                }
+            }
         }
-        #expect(genConfig["responseMimeType"] as? String == "application/json")
-        let schema = genConfig["responseJsonSchema"] as? [String: Any]
-        #expect(schema != nil)
-        #expect(schema?["type"] as? String == "object")
     }
 
     @Test func decodesAllActionKindsIncludingReplacing() async throws {
@@ -322,22 +345,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
         MockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            let badJSON = """
-            {
-              "candidates": [
-                {
-                  "content": {
-                    "parts": [
-                      {
-                        "text": "{ not valid json here ..."
-                      }
-                    ]
-                  }
-                }
-              ]
-            }
-            """
-            return (response, badJSON.data(using: .utf8)!)
+            return (response, self.interaction(status: "completed", text: "{ not valid json here ..."))
         }
 
         do {
