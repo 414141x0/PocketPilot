@@ -14,6 +14,14 @@ const SERVICE_NAME: &str = "com.apple.accessibility.axAuditDaemon.remoteserver.s
 const MAX_DEPTH: usize = 12;
 const MAX_NODES: usize = 300;
 
+/// Turns off the Accessibility Inspector overlay that the focus walk otherwise paints
+/// as a green box into every screenshot. `required` selectors must succeed; others
+/// are best-effort so a missing daemon method cannot take down snapshots.
+const INSPECTOR_HIGHLIGHT_OFF: [(&str, bool); 2] = [
+    ("deviceInspectorShowVisuals:", true),
+    ("deviceEnableHighlight:", false),
+];
+
 pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
 }
@@ -165,7 +173,9 @@ impl AxClient {
         let mut dtx = RemoteServerClient::new(socket);
         perform_dtx_handshake(&mut dtx).await?;
         flush_initial_messages(&mut dtx).await;
-        Ok(Self { dtx })
+        let mut client = Self { dtx };
+        client.disable_inspector_highlight().await?;
+        Ok(client)
     }
 
     pub(crate) async fn snapshot(&mut self) -> Result<Vec<u8>, String> {
@@ -236,6 +246,19 @@ impl AxClient {
 
         serde_json::to_vec(&builder.elements)
             .map_err(|error| format!("AX JSON serialization failed: {error}"))
+    }
+
+    async fn disable_inspector_highlight(&mut self) -> Result<(), String> {
+        for &(selector, required) in &INSPECTOR_HIGHLIGHT_OFF {
+            if let Err(error) = self
+                .invoke(selector, vec![AuxValue::archived_value(false)])
+                .await
+                && required
+            {
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     async fn invoke(&mut self, selector: &str, arguments: Vec<AuxValue>) -> Result<(), String> {
@@ -495,6 +518,17 @@ mod tests {
         assert_eq!(builder.elements.len(), 2);
         assert_eq!(builder.elements[0].children, ["child"]);
         assert_eq!(builder.elements[1].token_hex, "02");
+    }
+
+    #[test]
+    fn inspector_highlight_off_is_visuals_required_and_highlight_optional() {
+        assert_eq!(
+            INSPECTOR_HIGHLIGHT_OFF,
+            [
+                ("deviceInspectorShowVisuals:", true),
+                ("deviceEnableHighlight:", false),
+            ]
+        );
     }
 
     #[test]
