@@ -155,7 +155,7 @@ public struct MLXPilot: Pilot {
                 maximumResponseTokens: Self.maximumResponseTokens
             )
         )
-        Self.log.debug(
+        Self.log.info(
             "Step \(step.number, privacy: .public) raw content (\(response.usage.output.totalTokenCount, privacy: .public) tokens): \(response.content.jsonString, privacy: .public)"
         )
         return try MLXDecisionSchema.reply(from: response.content, on: step.screen)
