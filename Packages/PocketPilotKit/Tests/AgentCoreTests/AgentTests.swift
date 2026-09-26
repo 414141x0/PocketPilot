@@ -449,6 +449,12 @@ private actor AlternatingDevice: Device {
         #expect(await pilot.decided == false)
     }
 
+    @Test func autoFinishesMultiWordAppNames() {
+        #expect(OpenGoal.isPureOpen("Open the App Store, then finish", app: "App Store"))
+        #expect(OpenGoal.isPureOpen("Open Voice Memos", app: "Voice Memos"))
+        #expect(!OpenGoal.isPureOpen("Open App Store and buy something", app: "App Store"))
+    }
+
     @Test func doesNotAutoFinishWhenGoalAsksForMoreThanOpen() async throws {
         let pilot = ScriptedPilot(.giveUp(reason: "x"))
         let device = ClockAlreadyOpenDevice()

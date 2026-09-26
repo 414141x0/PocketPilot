@@ -19,9 +19,10 @@ enum OpenGoal {
         for phrase in noisePhrases {
             text = text.replacingOccurrences(of: phrase, with: " ")
         }
-        let letters = text.map { $0.isLetter || $0.isWhitespace ? $0 : " " }
+        let letters = text.map { $0.isLetter || $0.isNumber || $0.isWhitespace ? $0 : " " }
         let tokens = String(letters).split(whereSeparator: \.isWhitespace).map(String.init)
-        let drop: Set<String> = ["open", "the", "app", app.lowercased()]
+        let appWords = app.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let drop = Set(["open", "the", "app"] + appWords)
         return tokens.filter { !drop.contains($0) }
     }
 
