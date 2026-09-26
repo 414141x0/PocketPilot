@@ -23,6 +23,14 @@ const INSPECTOR_HIGHLIGHT_OFF: [&str; 2] =
 
 pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
+    /// Last pid from `hostDeviceFrontmostAppPidDidChange:`. There is no device-side getter.
+    frontmost_pid: Option<i64>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+struct FrontmostApp {
+    name: String,
+    bundle_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -172,7 +180,10 @@ impl AxClient {
         let mut dtx = RemoteServerClient::new(socket);
         perform_dtx_handshake(&mut dtx).await?;
         flush_initial_messages(&mut dtx).await;
-        let mut client = Self { dtx };
+        let mut client = Self {
+            dtx,
+            frontmost_pid: None,
+        };
         client.disable_inspector_highlight().await?;
         Ok(client)
     }
@@ -223,6 +234,7 @@ impl AxClient {
             if message.data.as_ref().and_then(Value::as_string)
                 != Some("hostInspectorCurrentElementChanged:")
             {
+                self.note_host_event(&message);
                 continue;
             }
             let Some(payload) = decode_first_argument(&message)? else {
@@ -250,6 +262,80 @@ impl AxClient {
 
         serde_json::to_vec(&builder.elements)
             .map_err(|error| format!("AX JSON serialization failed: {error}"))
+    }
+
+    pub(crate) async fn frontmost_app(&mut self) -> Result<Vec<u8>, String> {
+        let started = std::time::Instant::now();
+        let result = self.frontmost_app_inner().await;
+        eprintln!(
+            "pilot_bridge: frontmost_app {} in {}ms",
+            if result.is_ok() { "ok" } else { "err" },
+            started.elapsed().as_millis()
+        );
+        result
+    }
+
+    async fn frontmost_app_inner(&mut self) -> Result<Vec<u8>, String> {
+        self.invoke(
+            "deviceSetAppMonitoringEnabled:",
+            vec![AuxValue::archived_value(true)],
+        )
+        .await?;
+        let applications = self.request("deviceRunningApplications", vec![]).await?;
+        let pid = self.wait_for_frontmost_pid().await?;
+        let app = find_application(&applications, pid).ok_or_else(|| {
+            format!("running applications had no name and bundle identifier for PID {pid}")
+        })?;
+        serde_json::to_vec(&app)
+            .map_err(|error| format!("frontmost app JSON serialization failed: {error}"))
+    }
+
+    async fn wait_for_frontmost_pid(&mut self) -> Result<i64, String> {
+        // Drain anything already queued (including a pid change from the last
+        // action) before trusting the cache. Returning SpringBoard after "open
+        // Clock" is the wander C15 exists to prevent.
+        self.drain_pending_host_events().await?;
+        if let Some(pid) = self.frontmost_pid {
+            return Ok(pid);
+        }
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while tokio::time::Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            match tokio::time::timeout(remaining, self.dtx.read_message(0)).await {
+                Ok(Ok(message)) => {
+                    self.note_host_event(&message);
+                    if let Some(pid) = self.frontmost_pid {
+                        return Ok(pid);
+                    }
+                }
+                Ok(Err(error)) => return Err(format!("AX event read failed: {error:?}")),
+                Err(_) => break,
+            }
+        }
+        Err("timed out waiting for hostDeviceFrontmostAppPidDidChange:".into())
+    }
+
+    async fn drain_pending_host_events(&mut self) -> Result<(), String> {
+        loop {
+            match tokio::time::timeout(Duration::from_millis(20), self.dtx.read_message(0)).await {
+                Ok(Ok(message)) => self.note_host_event(&message),
+                Ok(Err(error)) => return Err(format!("AX event read failed: {error:?}")),
+                Err(_) => return Ok(()),
+            }
+        }
+    }
+
+    fn note_host_event(&mut self, message: &Message) {
+        if message.data.as_ref().and_then(Value::as_string)
+            != Some("hostDeviceFrontmostAppPidDidChange:")
+        {
+            return;
+        }
+        if let Ok(Some(payload)) = decode_first_argument(message)
+            && let Some(pid) = first_integer(&payload).filter(|pid| *pid > 0)
+        {
+            self.frontmost_pid = Some(pid);
+        }
     }
 
     async fn disable_inspector_highlight(&mut self) -> Result<(), String> {
@@ -281,6 +367,7 @@ impl AxClient {
                     .map_err(|error| format!("AX response read failed: {error:?}"))?;
                 let incoming_selector = message.data.as_ref().and_then(Value::as_string);
                 if incoming_selector.is_some_and(|value| value.starts_with("host")) {
+                    self.note_host_event(&message);
                     continue;
                 }
                 if message
@@ -486,6 +573,56 @@ fn direct_bool_field(value: &Value, key: &str) -> Option<bool> {
     scalar(direct_field(value, key)?).and_then(Value::as_boolean)
 }
 
+fn first_integer(value: &Value) -> Option<i64> {
+    let value = scalar(value)?;
+    value
+        .as_signed_integer()
+        .or_else(|| {
+            value
+                .as_unsigned_integer()
+                .and_then(|value| i64::try_from(value).ok())
+        })
+        .or_else(|| match value {
+            Value::Dictionary(dictionary) => dictionary.values().find_map(first_integer),
+            Value::Array(array) => array.iter().find_map(first_integer),
+            _ => None,
+        })
+}
+
+fn find_application(value: &Value, pid: i64) -> Option<FrontmostApp> {
+    let value = scalar(value)?;
+    match value {
+        Value::Dictionary(dictionary) => {
+            if application_pid(value) == Some(pid) {
+                return application_identity(value);
+            }
+            dictionary
+                .values()
+                .find_map(|value| find_application(value, pid))
+        }
+        Value::Array(array) => array.iter().find_map(|value| find_application(value, pid)),
+        _ => None,
+    }
+}
+
+fn application_pid(value: &Value) -> Option<i64> {
+    ["PidValue_v1", "pid"]
+        .into_iter()
+        .find_map(|key| find_field(value, key).and_then(first_integer))
+}
+
+fn application_identity(value: &Value) -> Option<FrontmostApp> {
+    let name = ["DisplayNameValue_v1", "displayName", "name"]
+        .into_iter()
+        .find_map(|key| string_field(value, key))
+        .filter(|name| !name.is_empty())?;
+    let bundle_id = ["BundleIdentifierValue_v1", "bundleIdentifier", "bundle_id"]
+        .into_iter()
+        .find_map(|key| string_field(value, key))
+        .filter(|bundle_id| !bundle_id.is_empty())?;
+    Some(FrontmostApp { name, bundle_id })
+}
+
 fn token_hex(value: &Value) -> Option<String> {
     find_field(value, "PlatformElementValue_v1")
         .and_then(scalar)
@@ -530,6 +667,53 @@ mod tests {
             INSPECTOR_HIGHLIGHT_OFF,
             ["deviceInspectorShowVisuals:", "deviceEnableHighlight:",]
         );
+    }
+
+    #[test]
+    fn finds_frontmost_app_from_audit_application_envelope() {
+        let applications = Value::Array(vec![
+            audit_application(83, "SpringBoard", "com.apple.springboard"),
+            audit_application(501, "Settings", "com.apple.Preferences"),
+        ]);
+        assert_eq!(
+            find_application(&applications, 501),
+            Some(FrontmostApp {
+                name: "Settings".to_string(),
+                bundle_id: "com.apple.Preferences".to_string(),
+            })
+        );
+        assert_eq!(find_application(&applications, 999), None);
+    }
+
+    #[test]
+    fn finds_frontmost_app_pid_inside_passthrough() {
+        assert_eq!(
+            first_integer(&passthrough(Value::Integer(501.into()))),
+            Some(501)
+        );
+    }
+
+    fn audit_application(pid: i64, name: &str, bundle_id: &str) -> Value {
+        Value::Dictionary(Dictionary::from_iter([
+            (
+                "ObjectType".to_string(),
+                Value::String("AXAuditApplication_v1".to_string()),
+            ),
+            (
+                "Value".to_string(),
+                passthrough(Value::Dictionary(Dictionary::from_iter([
+                    (
+                        "PidValue_v1".to_string(),
+                        passthrough(Value::Integer(pid.into())),
+                    ),
+                    ("DisplayNameValue_v1".to_string(), passthrough(name)),
+                    (
+                        "BundleIdentifierValue_v1".to_string(),
+                        passthrough(bundle_id),
+                    ),
+                ]))),
+            ),
+        ]))
     }
 
     #[test]

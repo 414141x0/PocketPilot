@@ -1,4 +1,7 @@
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "dev.typealias.PocketPilot", category: "AgentCore")
 
 /// Drives a ``Device`` toward a goal by alternating observation, decision, and action.
 ///
@@ -65,7 +68,6 @@ public struct Agent: Sendable {
         var remembered: String?
         let apps = (try? await device.installedApps()) ?? []
         let mentionedApps = apps.named(in: goal)
-        var location = startsAt ?? (preparation.contains(.press(.home)) ? "Home Screen" : nil)
         for gesture in preparation {
             try await device.perform(gesture)
             try await Task.sleep(for: settle)
@@ -73,6 +75,7 @@ public struct Agent: Sendable {
         while history.count < maxSteps {
             try Task.checkCancellation()
 
+            let app = await Self.readFrontmostApp(from: device)
             let screen = try await device.observe()
             if let previous, let last = history.indices.last, history[last].failure == nil,
                history[last].decision.action.expectsChange, screen.looksUnchanged(from: previous) {
@@ -94,7 +97,7 @@ public struct Agent: Sendable {
                 }
             }
 
-            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps, location: location)
+            let step = Step(goal: goal, screen: screen, history: history, remembered: remembered, mentionedApps: mentionedApps, app: app)
             onEvent(.observed(step))
 
             let decision = try await pilot.decide(step)
@@ -114,9 +117,6 @@ public struct Agent: Sendable {
             }
             if let failure = turn.failure {
                 onEvent(.failed(decision.action, reason: failure))
-            }
-            if turn.failure == nil, let destination = decision.action.destination(in: apps) {
-                location = destination
             }
             history.append(turn)
             try await Task.sleep(for: settle)
@@ -143,18 +143,23 @@ public struct Agent: Sendable {
             return error.description
         }
     }
+
+    private static func readFrontmostApp(from device: any Device) async -> FrontmostApp? {
+        let started = ContinuousClock.now
+        do {
+            let app = try await device.frontmostApp()
+            let ms = Int((ContinuousClock.now - started) / .milliseconds(1))
+            log.notice("frontmost app \(app?.briefName ?? "nil", privacy: .public) in \(ms)ms")
+            return app
+        } catch {
+            let ms = Int((ContinuousClock.now - started) / .milliseconds(1))
+            log.notice("frontmost app failed in \(ms)ms: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
 }
 
 extension Action {
-    /// Where performing this action lands, when that is certain: the opened app or the Home Screen.
-    func destination(in apps: [InstalledApp]) -> String? {
-        switch self {
-        case .open(let query): apps.first { $0.name.lowercased() == query.lowercased() || $0.bundleID == query }?.name ?? query
-        case .press(.home): "Home Screen"
-        default: nil
-        }
-    }
-
     /// Whether performing this action should visibly change the screen.
     /// Typing is excluded: text entered into a field often isn't visible to OCR or accessibility,
     /// and reporting "no change" makes pilots type the same text again.
