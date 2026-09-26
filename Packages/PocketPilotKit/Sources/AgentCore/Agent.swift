@@ -75,7 +75,7 @@ public struct Agent: Sendable {
         while history.count < maxSteps {
             try Task.checkCancellation()
 
-            let app = await Self.readFrontmostApp(from: device)
+            let app = await Self.readFrontmostApp(from: device, apps: apps)
             let screen = try await device.observe()
             if let previous, let last = history.indices.last, history[last].failure == nil,
                history[last].decision.action.expectsChange, screen.looksUnchanged(from: previous) {
@@ -144,12 +144,13 @@ public struct Agent: Sendable {
         }
     }
 
-    private static func readFrontmostApp(from device: any Device) async -> FrontmostApp? {
+    private static func readFrontmostApp(from device: any Device, apps: [InstalledApp]) async -> FrontmostApp? {
         let started = ContinuousClock.now
         do {
-            let app = try await device.frontmostApp()
+            let raw = try await device.frontmostApp()
+            let app = raw?.resolved(using: apps)
             let ms = Int((ContinuousClock.now - started) / .milliseconds(1))
-            log.notice("frontmost app \(app?.briefName ?? "nil", privacy: .public) in \(ms)ms")
+            log.notice("frontmost app \(app?.briefName ?? "nil", privacy: .public) raw=\(raw?.name ?? "nil", privacy: .public) in \(ms)ms")
             return app
         } catch {
             let ms = Int((ContinuousClock.now - started) / .milliseconds(1))

@@ -23,8 +23,19 @@ const INSPECTOR_HIGHLIGHT_OFF: [&str; 2] =
 
 pub(crate) struct AxClient {
     dtx: RemoteServerClient<Box<dyn ReadWrite>>,
-    /// Last pid from `hostDeviceFrontmostAppPidDidChange:`. There is no device-side getter.
-    frontmost_pid: Option<i64>,
+    /// Latest `hostAppStateChanged:` per pid. Frontmost is the newest Foreground entry.
+    app_states: HashMap<i64, AppState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AppState {
+    display_id: String,
+    pid: i64,
+    state: i64,
+    description: String,
+    time: i64,
+    exec_name: String,
+    app_name: String,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -182,7 +193,7 @@ impl AxClient {
         flush_initial_messages(&mut dtx).await;
         let mut client = Self {
             dtx,
-            frontmost_pid: None,
+            app_states: HashMap::new(),
         };
         client.disable_inspector_highlight().await?;
         Ok(client)
@@ -281,38 +292,12 @@ impl AxClient {
             vec![AuxValue::archived_value(true)],
         )
         .await?;
-        let applications = self.request("deviceRunningApplications", vec![]).await?;
-        let pid = self.wait_for_frontmost_pid().await?;
-        let app = find_application(&applications, pid).ok_or_else(|| {
-            format!("running applications had no name and bundle identifier for PID {pid}")
+        self.drain_pending_host_events().await?;
+        let app = self.current_frontmost().ok_or_else(|| {
+            "no hostAppStateChanged: yet (Home presses will fill the map)".to_string()
         })?;
         serde_json::to_vec(&app)
             .map_err(|error| format!("frontmost app JSON serialization failed: {error}"))
-    }
-
-    async fn wait_for_frontmost_pid(&mut self) -> Result<i64, String> {
-        // Drain anything already queued (including a pid change from the last
-        // action) before trusting the cache. Returning SpringBoard after "open
-        // Clock" is the wander C15 exists to prevent.
-        self.drain_pending_host_events().await?;
-        if let Some(pid) = self.frontmost_pid {
-            return Ok(pid);
-        }
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-        while tokio::time::Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            match tokio::time::timeout(remaining, self.dtx.read_message(0)).await {
-                Ok(Ok(message)) => {
-                    self.note_host_event(&message);
-                    if let Some(pid) = self.frontmost_pid {
-                        return Ok(pid);
-                    }
-                }
-                Ok(Err(error)) => return Err(format!("AX event read failed: {error:?}")),
-                Err(_) => break,
-            }
-        }
-        Err("timed out waiting for hostDeviceFrontmostAppPidDidChange:".into())
     }
 
     async fn drain_pending_host_events(&mut self) -> Result<(), String> {
@@ -326,16 +311,29 @@ impl AxClient {
     }
 
     fn note_host_event(&mut self, message: &Message) {
-        if message.data.as_ref().and_then(Value::as_string)
-            != Some("hostDeviceFrontmostAppPidDidChange:")
-        {
+        let Some(selector) = message.data.as_ref().and_then(Value::as_string) else {
+            return;
+        };
+        if selector != "hostAppStateChanged:" {
             return;
         }
-        if let Ok(Some(payload)) = decode_first_argument(message)
-            && let Some(pid) = first_integer(&payload).filter(|pid| *pid > 0)
-        {
-            self.frontmost_pid = Some(pid);
+        let Ok(Some(payload)) = decode_first_argument(message) else {
+            return;
+        };
+        let Some(event) = parse_app_state(&payload) else {
+            return;
+        };
+        if std::env::var_os("POCKETPILOT_RECORD").is_some() {
+            eprintln!(
+                "pilot_bridge: app {} pid={} state={} {}",
+                event.display_id, event.pid, event.state, event.description
+            );
         }
+        self.app_states.insert(event.pid, event);
+    }
+
+    fn current_frontmost(&self) -> Option<FrontmostApp> {
+        choose_frontmost(self.app_states.values())
     }
 
     async fn disable_inspector_highlight(&mut self) -> Result<(), String> {
@@ -484,6 +482,57 @@ async fn flush_initial_messages(dtx: &mut RemoteServerClient<Box<dyn ReadWrite>>
     }
 }
 
+#[cfg(test)]
+fn plist_preview(value: &Value, budget: usize) -> String {
+    let mut out = String::new();
+    write_plist_preview(value, &mut out);
+    let count = out.chars().count();
+    if count > budget {
+        let truncated: String = out.chars().take(budget).collect();
+        format!("{truncated}…")
+    } else {
+        out
+    }
+}
+
+#[cfg(test)]
+fn write_plist_preview(value: &Value, out: &mut String) {
+    match value {
+        Value::String(string) => {
+            out.push('"');
+            out.push_str(string);
+            out.push('"');
+        }
+        Value::Integer(integer) => out.push_str(&integer.to_string()),
+        Value::Real(real) => out.push_str(&real.to_string()),
+        Value::Boolean(boolean) => out.push_str(if *boolean { "true" } else { "false" }),
+        Value::Data(data) => out.push_str(&format!("<data {}B>", data.len())),
+        Value::Array(array) => {
+            out.push('[');
+            for (index, item) in array.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_plist_preview(item, out);
+            }
+            out.push(']');
+        }
+        Value::Dictionary(dictionary) => {
+            out.push('{');
+            for (index, (key, item)) in dictionary.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(key);
+                out.push(':');
+                write_plist_preview(item, out);
+            }
+            out.push('}');
+        }
+        other => out.push_str(&format!("{other:?}")),
+    }
+}
+
 fn passthrough(value: impl Into<Value>) -> Value {
     Value::Dictionary(Dictionary::from_iter([
         (
@@ -573,6 +622,88 @@ fn direct_bool_field(value: &Value, key: &str) -> Option<bool> {
     scalar(direct_field(value, key)?).and_then(Value::as_boolean)
 }
 
+impl AppState {
+    fn is_foreground(&self) -> bool {
+        self.description.to_ascii_lowercase().contains("foreground")
+    }
+
+    fn is_ignored(&self) -> bool {
+        let id = self.display_id.to_ascii_lowercase();
+        if id == "com.apple.springboard" {
+            return false;
+        }
+        id.contains("service")
+            || id.contains("extension")
+            || id.contains("activity")
+            || id.contains("widget")
+    }
+
+    fn to_app(&self) -> FrontmostApp {
+        let name = if !self.app_name.is_empty() && self.app_name != "Unknown" {
+            self.app_name.clone()
+        } else if !self.exec_name.is_empty() {
+            self.exec_name.clone()
+        } else {
+            self.display_id
+                .rsplit('.')
+                .next()
+                .unwrap_or(&self.display_id)
+                .to_string()
+        };
+        FrontmostApp {
+            name,
+            bundle_id: self.display_id.clone(),
+        }
+    }
+}
+
+fn parse_app_state(payload: &Value) -> Option<AppState> {
+    let display_id = string_field(payload, "displayID").filter(|id| !id.is_empty())?;
+    let pid = find_field(payload, "pid")
+        .and_then(first_integer)
+        .filter(|pid| *pid > 0)?;
+    let state = find_field(payload, "state")
+        .and_then(first_integer)
+        .unwrap_or(0);
+    let description = string_field(payload, "state_description").unwrap_or_default();
+    let time = find_field(payload, "mach_absolute_time")
+        .and_then(first_integer)
+        .or_else(|| {
+            find_field(payload, "timestamp")
+                .and_then(|value| find_field(value, "NS.time"))
+                .and_then(first_integer)
+        })
+        .unwrap_or(0);
+    Some(AppState {
+        display_id,
+        pid,
+        state,
+        description,
+        time,
+        exec_name: string_field(payload, "execName").unwrap_or_default(),
+        app_name: string_field(payload, "appName").unwrap_or_default(),
+    })
+}
+
+fn choose_frontmost<'a>(states: impl IntoIterator<Item = &'a AppState>) -> Option<FrontmostApp> {
+    let states: Vec<&AppState> = states.into_iter().collect();
+    if states.is_empty() {
+        return None;
+    }
+    if let Some(foreground) = states
+        .iter()
+        .copied()
+        .filter(|state| state.is_foreground() && !state.is_ignored())
+        .max_by_key(|state| state.time)
+    {
+        return Some(foreground.to_app());
+    }
+    Some(FrontmostApp {
+        name: "SpringBoard".into(),
+        bundle_id: "com.apple.springboard".into(),
+    })
+}
+
 fn first_integer(value: &Value) -> Option<i64> {
     let value = scalar(value)?;
     value
@@ -589,6 +720,7 @@ fn first_integer(value: &Value) -> Option<i64> {
         })
 }
 
+#[cfg(test)]
 fn find_application(value: &Value, pid: i64) -> Option<FrontmostApp> {
     let value = scalar(value)?;
     match value {
@@ -605,12 +737,14 @@ fn find_application(value: &Value, pid: i64) -> Option<FrontmostApp> {
     }
 }
 
+#[cfg(test)]
 fn application_pid(value: &Value) -> Option<i64> {
     ["PidValue_v1", "pid"]
         .into_iter()
         .find_map(|key| find_field(value, key).and_then(first_integer))
 }
 
+#[cfg(test)]
 fn application_identity(value: &Value) -> Option<FrontmostApp> {
     let name = ["DisplayNameValue_v1", "displayName", "name"]
         .into_iter()
@@ -662,11 +796,137 @@ mod tests {
     }
 
     #[test]
+    fn plist_preview_shows_keys_and_truncates() {
+        let value = Value::Dictionary(Dictionary::from_iter([
+            ("pid".to_string(), Value::Integer(501.into())),
+            ("state".to_string(), Value::String("foreground".into())),
+        ]));
+        let preview = plist_preview(&value, 600);
+        assert!(preview.contains("pid"));
+        assert!(preview.contains("501"));
+        assert!(plist_preview(&value, 8).ends_with('…'));
+    }
+
+    #[test]
     fn inspector_highlight_off_sends_visuals_and_highlight() {
         assert_eq!(
             INSPECTOR_HIGHLIGHT_OFF,
             ["deviceInspectorShowVisuals:", "deviceEnableHighlight:",]
         );
+    }
+
+    #[test]
+    fn parses_app_state_payload() {
+        let payload = app_state_payload(
+            "com.apple.weather",
+            501,
+            4,
+            "Foreground Running",
+            100,
+            "Weather",
+            "Weather",
+        );
+        let event = parse_app_state(&payload).unwrap();
+        assert_eq!(event.display_id, "com.apple.weather");
+        assert_eq!(event.pid, 501);
+        assert_eq!(event.state, 4);
+        assert!(event.is_foreground());
+        assert_eq!(
+            event.to_app(),
+            FrontmostApp {
+                name: "Weather".into(),
+                bundle_id: "com.apple.weather".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn chooses_latest_foreground_and_ignores_services() {
+        let weather = AppState {
+            display_id: "com.apple.weather".into(),
+            pid: 501,
+            state: 8,
+            description: "Foreground Running".into(),
+            time: 200,
+            exec_name: "Weather".into(),
+            app_name: "Unknown".into(),
+        };
+        let service = AppState {
+            display_id: "com.apple.TGOnDeviceInferenceProviderService".into(),
+            pid: 88,
+            state: 4,
+            description: "Background Running".into(),
+            time: 300,
+            exec_name: "TG".into(),
+            app_name: "Unknown".into(),
+        };
+        let clock = AppState {
+            display_id: "com.apple.mobiletimer".into(),
+            pid: 502,
+            state: 8,
+            description: "Foreground Running".into(),
+            time: 250,
+            exec_name: "MobileTimer".into(),
+            app_name: "Unknown".into(),
+        };
+        assert_eq!(
+            choose_frontmost([&weather, &service, &clock]),
+            Some(FrontmostApp {
+                name: "MobileTimer".into(),
+                bundle_id: "com.apple.mobiletimer".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn no_foreground_app_is_springboard() {
+        let background = AppState {
+            display_id: "com.apple.weather".into(),
+            pid: 501,
+            state: 2,
+            description: "Background Task Suspended".into(),
+            time: 1,
+            exec_name: "Weather".into(),
+            app_name: "Unknown".into(),
+        };
+        assert_eq!(
+            choose_frontmost([&background]),
+            Some(FrontmostApp {
+                name: "SpringBoard".into(),
+                bundle_id: "com.apple.springboard".into(),
+            })
+        );
+        assert_eq!(choose_frontmost([] as [&AppState; 0]), None);
+    }
+
+    fn app_state_payload(
+        display_id: &str,
+        pid: i64,
+        state: i64,
+        description: &str,
+        time: i64,
+        exec_name: &str,
+        app_name: &str,
+    ) -> Value {
+        Value::Dictionary(Dictionary::from_iter([
+            (
+                "name".to_string(),
+                Value::String("SBApplicationNotificationStateChanged".into()),
+            ),
+            ("displayID".to_string(), passthrough(display_id)),
+            ("pid".to_string(), passthrough(Value::Integer(pid.into()))),
+            (
+                "state".to_string(),
+                passthrough(Value::Integer(state.into())),
+            ),
+            ("state_description".to_string(), passthrough(description)),
+            (
+                "mach_absolute_time".to_string(),
+                passthrough(Value::Integer(time.into())),
+            ),
+            ("execName".to_string(), passthrough(exec_name)),
+            ("appName".to_string(), passthrough(app_name)),
+        ]))
     }
 
     #[test]
