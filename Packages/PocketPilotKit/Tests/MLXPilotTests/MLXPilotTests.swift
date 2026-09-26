@@ -171,6 +171,14 @@ struct MLXPilotTests {
         #expect(throws: MLXDecisionSchemaError.self) {
             _ = try MLXDecisionSchema.reply(from: outOfRange, on: emptyScreen())
         }
+
+        // Literal float element (device symptom: element 2.1e44) — rejected at parse or converter
+        #expect(throws: (any Error).self) {
+            let floatElement = try GeneratedContent(
+                json: #"{"thought":"Tap float element","action":{"type":"tap","element":2.1e44}}"#
+            )
+            _ = try MLXDecisionSchema.reply(from: floatElement, on: emptyScreen())
+        }
     }
 
     @Test func initDoesNotStartANetworkDownload() throws {
