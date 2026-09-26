@@ -205,7 +205,7 @@ extension DeviceError: CustomStringConvertible {
     public var description: String {
         switch self {
         case .tunnelUnavailable: "LocalDevVPN is not connected."
-        case .wifiOff: "Turn on Wi-Fi. iOS only lets LocalDevVPN reach this iPhone's developer services while Wi-Fi is on."
+        case .wifiOff: "Join Wi-Fi to continue. iOS only lets LocalDevVPN reach this iPhone's developer services while joined to a Wi-Fi network. Join any Wi-Fi network (another phone's hotspot works too), then reconnect LocalDevVPN."
         case .connectionFailed(let detail): "Couldn't connect to this iPhone: \(detail)"
         case .pairingRejected: "The pairing file was rejected by the device."
         case .developerImageMissing: "The Developer Disk Image is not mounted."
