@@ -62,7 +62,7 @@ private struct DeviceSection: View {
         } header: {
             Text("Device")
         } footer: {
-            Text("Keep LocalDevVPN connected while PocketPilot runs. It loops traffic back to this iPhone, so the app can reach its developer services without a Mac.")
+            Text("Join a Wi-Fi network (any network works — no internet needed), then connect LocalDevVPN. iOS only exposes this iPhone's developer services while joined to Wi-Fi, even though traffic stays on this device.")
         }
     }
 }
