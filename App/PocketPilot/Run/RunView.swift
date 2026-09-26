@@ -8,6 +8,7 @@ struct RunView: View {
     let model: RunModel
     @State private var goal = ""
     @State private var isShowingSetup = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -79,6 +80,10 @@ struct RunView: View {
                             }
                         }
                 }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, let pairing = setup.pairing else { return }
+                Task { await model.refreshSession(pairing: pairing) }
             }
             .task {
                 isShowingSetup = !setup.isReady

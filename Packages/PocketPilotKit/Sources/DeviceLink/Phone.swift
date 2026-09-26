@@ -36,6 +36,11 @@ public struct Phone: Device {
         try await session.frontmostApp()
     }
 
+    /// Cheap liveness check against the CoreDevice session.
+    public func probe() async throws(DeviceError) {
+        try await session.probe()
+    }
+
     public func perform(_ gesture: Gesture) async throws(DeviceError) {
         switch gesture {
         case .tap(let point): try await session.tap(point)

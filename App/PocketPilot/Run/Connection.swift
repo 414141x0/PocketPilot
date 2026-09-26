@@ -55,6 +55,17 @@ final class Connection {
         state = .disconnected
     }
 
+    /// After the app resumes, drop a dead tunnel so the chip never stays Connected.
+    func refresh(pairing: PairingFile) async {
+        guard phone != nil else { return }
+        do {
+            try await phone?.probe()
+        } catch {
+            reset()
+            _ = try? await phone(pairing: pairing)
+        }
+    }
+
     private func connect(_ pairing: PairingFile) async throws(DeviceError) -> Phone {
         state = .connecting
         let display = await sharedDisplay()

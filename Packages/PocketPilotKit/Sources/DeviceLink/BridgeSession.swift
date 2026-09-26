@@ -106,6 +106,24 @@ final class BridgeSession: Sendable {
     func screenshot() async throws(DeviceError) -> Data {
         try await bytes { pp_screenshot(handle, $0, $1) }
     }
+
+    /// Cheap liveness check: one screen-size query. Fails if the tunnel is dead.
+    func probe() async throws(DeviceError) {
+        _ = try await size()
+    }
+
+    func size() async throws(DeviceError) -> (UInt32, UInt32) {
+        try await withCheckedContinuation { continuation in
+            let context = Unmanaged.passRetained(Completion<(UInt32, UInt32)>(continuation)).toOpaque()
+            pp_screen_size(handle, { context, width, height, error, message in
+                let completion = Unmanaged<Completion<(UInt32, UInt32)>>.fromOpaque(context!).takeRetainedValue()
+                let result: Result<(UInt32, UInt32), DeviceError> = DeviceError(error, message).map(Result.failure)
+                    ?? .success((width, height))
+                completion.continuation.resume(returning: result)
+            }, context)
+        }
+        .get()
+    }
 }
 
 // MARK: - Callback bridging
