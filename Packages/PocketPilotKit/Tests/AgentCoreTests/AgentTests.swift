@@ -430,6 +430,10 @@ private actor AlternatingDevice: Device {
         #expect(Step(goal: "g", screen: step.screen, app: mixed).brief().contains("App: Home Screen"))
         let byName = FrontmostApp(name: "SpringBoard", bundleID: "")
         #expect(Step(goal: "g", screen: step.screen, app: byName).brief().contains("App: Home Screen"))
+        let timer = FrontmostApp(name: "MobileTimer", bundleID: "com.apple.mobiletimer")
+            .resolved(using: [InstalledApp(name: "Clock", bundleID: "com.apple.mobiletimer")])
+        #expect(Step(goal: "g", screen: step.screen, app: timer).brief().contains("App: Clock"))
+        #expect(!Step(goal: "g", screen: step.screen, app: timer).brief().contains("MobileTimer"))
     }
 
     @Test func readsActualAppEveryStep() async throws {

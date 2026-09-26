@@ -75,7 +75,7 @@ public struct Agent: Sendable {
         while history.count < maxSteps {
             try Task.checkCancellation()
 
-            let app = await Self.readFrontmostApp(from: device)
+            let app = await Self.readFrontmostApp(from: device)?.resolved(using: apps)
             let screen = try await device.observe()
             if let previous, let last = history.indices.last, history[last].failure == nil,
                history[last].decision.action.expectsChange, screen.looksUnchanged(from: previous) {

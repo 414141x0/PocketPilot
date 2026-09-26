@@ -28,10 +28,21 @@ public struct FrontmostApp: Sendable, Hashable, Decodable {
 
     /// The name shown in the brief: SpringBoard is the Home Screen.
     public var briefName: String {
-        let isSpringBoard =
-            bundleID.caseInsensitiveCompare("com.apple.springboard") == .orderedSame
+        isSpringBoard ? "Home Screen" : name
+    }
+
+    var isSpringBoard: Bool {
+        bundleID.caseInsensitiveCompare("com.apple.springboard") == .orderedSame
             || name.caseInsensitiveCompare("SpringBoard") == .orderedSame
-        return isSpringBoard ? "Home Screen" : name
+    }
+
+    /// Prefer the installed-app display name (Clock, Settings) over execName (MobileTimer, Preferences).
+    public func resolved(using apps: [InstalledApp]) -> FrontmostApp {
+        guard !isSpringBoard else { return self }
+        guard let installed = apps.first(where: { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }) else {
+            return self
+        }
+        return FrontmostApp(name: installed.name, bundleID: bundleID)
     }
 
     enum CodingKeys: String, CodingKey {
