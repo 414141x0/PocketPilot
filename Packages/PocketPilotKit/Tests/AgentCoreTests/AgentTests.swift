@@ -41,6 +41,13 @@ import Testing
         #expect(await pilot.calls == 2)
     }
 
+    @Test func abandonsAfterThreeConsecutiveBadDecisions() async throws {
+        let pilot = AlwaysThrowingPilot()
+        let outcome = try await Agent(device: FakeDevice(), pilot: pilot, settle: .zero).run("Open Weather")
+        #expect(outcome == .abandoned(reason: "The last decision could not be used: missing app"))
+        #expect(await pilot.calls == 3)
+    }
+
     @Test func stopsAtStepLimit() async throws {
         let pilot = ScriptedPilot(repeating: .wait(seconds: 0))
         let outcome = try await Agent(device: FakeDevice(), pilot: pilot, maxSteps: 3, settle: .zero).run("Loop")
@@ -197,6 +204,14 @@ private actor RecoveringPilot: Pilot {
         calls += 1
         if calls == 1 { throw ParseError() }
         return Decision(thought: "ok", action: .done(summary: "recovered"))
+    }
+}
+
+private actor AlwaysThrowingPilot: Pilot {
+    var calls = 0
+    func decide(_ step: Step) async throws -> Decision {
+        calls += 1
+        throw ParseError()
     }
 }
 
