@@ -39,7 +39,8 @@ public struct FrontmostApp: Sendable, Hashable, Decodable {
     /// Prefer the installed-app display name (Clock, Settings) over execName (MobileTimer, Preferences).
     public func resolved(using apps: [InstalledApp]) -> FrontmostApp {
         guard !isSpringBoard else { return self }
-        guard let installed = apps.first(where: { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }) else {
+        guard let installed = apps.first(where: { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }),
+              !installed.name.isEmpty else {
             return self
         }
         return FrontmostApp(name: installed.name, bundleID: bundleID)
