@@ -1,3 +1,161 @@
 {
-  "goals": []
+  "_notes": [
+    "PocketPilot eval suite v1 (E1 spec). READ-ONLY goals only: the E2 runner executes every goal from Home with RunPolicy.readOnly and presses Home between goals.",
+    "Pass semantics (E2 judges): Outcome must be .completed via done(). Every specified pass field must hold. summaryContains: ALL substrings present (case-insensitive). summaryMatchesRegex: ICU regex against the done summary. summaryMinLength: summary character count. finalApp: case-insensitive equality with the final frontmost briefName (Home Screen for SpringBoard).",
+    "Operator setup: clear first-run onboarding/sheets once per app before running (Weather location, Translate data, Tips welcome). Goals assume steady state.",
+    "v1 limitations: summary truthfulness is NOT verified (a model can claim 'found it' without finding it); screen-state assertions (AX snapshot contains X) are deferred to Q1 on-device frames. S3 unknown-region refusals may fail icon-heavy goals; E2 should log abandon/refusal reasons per goal so the suite measures S3's false-positive rate.",
+    "Loading: E2 (DEBUG runner) loads this file, e.g. via Bundle.module with a .process resource entry, or by repo-relative path in DEBUG builds."
+  ],
+  "version": 1,
+  "goals": [
+    {
+      "id": "settings-about-version",
+      "goal": "Open Settings, go to General > About, and report the iOS version. Do not change anything.",
+      "apps": ["Settings"],
+      "taskTypes": ["navigate", "read-value"],
+      "answerShape": "done summary contains an iOS version number such as 26.1",
+      "pass": { "summaryMatchesRegex": "\\d+\\.\\d+", "finalApp": "Settings" },
+      "maxSteps": 15,
+      "notes": "Deep in-app navigation plus value read."
+    },
+    {
+      "id": "settings-battery-level",
+      "goal": "Open Settings, open Battery, and report the battery percentage. Do not change anything.",
+      "apps": ["Settings"],
+      "taskTypes": ["navigate", "read-value"],
+      "answerShape": "done summary contains a percentage such as 82%",
+      "pass": { "summaryMatchesRegex": "\\d+\\s?%", "finalApp": "Settings" },
+      "maxSteps": 12,
+      "notes": "System page read."
+    },
+    {
+      "id": "settings-find-privacy",
+      "goal": "Open Settings, scroll until you find 'Privacy & Security', and report that you found it. Do not change anything.",
+      "apps": ["Settings"],
+      "taskTypes": ["scroll-find"],
+      "answerShape": "done summary names Privacy & Security",
+      "pass": { "summaryContains": ["Privacy"], "finalApp": "Settings" },
+      "maxSteps": 15,
+      "notes": "Scroll-to-find; entering the pane is unnecessary. Summary-truthfulness caveat applies."
+    },
+    {
+      "id": "settings-general-backout",
+      "goal": "Open Settings, go into General, then navigate back to the main Settings page and report done. Do not change anything.",
+      "apps": ["Settings"],
+      "taskTypes": ["navigate", "back-out"],
+      "answerShape": "done summary confirms back on the main Settings page",
+      "pass": { "summaryContains": ["Settings"], "finalApp": "Settings" },
+      "maxSteps": 12,
+      "notes": "Back-out navigation. Weak v1 assertion: final screen is not verified, only the app."
+    },
+    {
+      "id": "weather-today-high",
+      "goal": "Open Weather and report today's high temperature. Do not change anything.",
+      "apps": ["Weather"],
+      "taskTypes": ["read-value"],
+      "answerShape": "done summary contains a temperature such as 24°",
+      "pass": { "summaryMatchesRegex": "-?\\d+\\s?°", "finalApp": "Weather" },
+      "maxSteps": 8,
+      "notes": "Needs network. If a location prompt appears, S2 refuses both Allow and Don't Allow (whole-word 'allow'), so clear onboarding once up front."
+    },
+    {
+      "id": "clock-world-cities",
+      "goal": "Open Clock, go to the World Clock tab, and report the listed cities. Do not change anything.",
+      "apps": ["Clock"],
+      "taskTypes": ["tabs", "read-value"],
+      "answerShape": "done summary names World Clock cities",
+      "pass": { "summaryContains": ["World Clock"], "finalApp": "Clock" },
+      "maxSteps": 10,
+      "notes": "City list varies by user config, so the pass key is the section name."
+    },
+    {
+      "id": "stocks-aapl-price",
+      "goal": "Open Stocks and report the current price of Apple (AAPL). Do not change anything.",
+      "apps": ["Stocks"],
+      "taskTypes": ["read-value"],
+      "answerShape": "done summary contains a decimal price such as 232.14",
+      "pass": { "summaryMatchesRegex": "\\d+\\.\\d+", "finalApp": "Stocks" },
+      "maxSteps": 8,
+      "notes": "Needs network."
+    },
+    {
+      "id": "calculator-display",
+      "goal": "Open Calculator and report what the display shows. Do not change anything.",
+      "apps": ["Calculator"],
+      "taskTypes": ["read-value"],
+      "answerShape": "done summary contains the displayed digit(s)",
+      "pass": { "summaryMatchesRegex": "\\d", "finalApp": "Calculator" },
+      "maxSteps": 8,
+      "notes": "No taps needed. Deliberately avoids interaction: S2 currently permits digit buttons."
+    },
+    {
+      "id": "appstore-apps-tab",
+      "goal": "Open the App Store, switch to the Apps tab, and report one app name you see there. Do not change anything.",
+      "apps": ["App Store"],
+      "taskTypes": ["tabs", "read-value"],
+      "answerShape": "done summary names the Apps tab and one visible app",
+      "pass": { "summaryContains": ["Apps"], "finalApp": "App Store" },
+      "maxSteps": 10
+    },
+    {
+      "id": "appstore-today-return",
+      "goal": "Open the App Store, open the Apps tab, then go back to the Today tab and report done. Do not change anything.",
+      "apps": ["App Store"],
+      "taskTypes": ["tabs", "back-out"],
+      "answerShape": "done summary confirms ending on Today",
+      "pass": { "summaryContains": ["Today"], "finalApp": "App Store" },
+      "maxSteps": 12,
+      "notes": "Tab round-trip."
+    },
+    {
+      "id": "podcasts-browse-featured",
+      "goal": "Open Podcasts, open the Browse tab, and report one featured show title. Do not change anything.",
+      "apps": ["Podcasts"],
+      "taskTypes": ["tabs", "read-value"],
+      "answerShape": "done summary contains a show title (free text)",
+      "pass": { "summaryMinLength": 15, "finalApp": "Podcasts" },
+      "maxSteps": 10,
+      "notes": "Browse tab avoids the personal library."
+    },
+    {
+      "id": "safari-favorites-title",
+      "goal": "Open Safari, open a page from Favorites, and report its title. Do not change anything.",
+      "apps": ["Safari"],
+      "taskTypes": ["navigate", "read-value"],
+      "answerShape": "done summary contains the page title (free text)",
+      "pass": { "summaryMinLength": 10, "finalApp": "Safari" },
+      "maxSteps": 12,
+      "notes": "Requires a non-empty Favorites; the start page shows Favorites by default. No typing."
+    },
+    {
+      "id": "tips-first-title",
+      "goal": "Open Tips and report the title of one featured tip or collection. Do not change anything.",
+      "apps": ["Tips"],
+      "taskTypes": ["read-value"],
+      "answerShape": "done summary contains a tip title (free text)",
+      "pass": { "summaryMinLength": 10, "finalApp": "Tips" },
+      "maxSteps": 8,
+      "notes": "Static Apple content, no personal data."
+    },
+    {
+      "id": "translate-languages",
+      "goal": "Open Translate and report the selected language pair. Do not change anything.",
+      "apps": ["Translate"],
+      "taskTypes": ["read-value"],
+      "answerShape": "done summary names two languages",
+      "pass": { "summaryMinLength": 8, "finalApp": "Translate" },
+      "maxSteps": 8,
+      "notes": "Clear first-run sheets once up front."
+    },
+    {
+      "id": "crossapp-settings-weather",
+      "goal": "Open Settings, then open Weather, and report the current temperature. Do not change anything.",
+      "apps": ["Settings", "Weather"],
+      "taskTypes": ["cross-app", "read-value"],
+      "answerShape": "done summary contains a temperature such as 24°",
+      "pass": { "summaryMatchesRegex": "-?\\d+\\s?°", "finalApp": "Weather" },
+      "maxSteps": 12,
+      "notes": "Cross-app. S1 auto-finish must NOT trigger: this is not a pure-open goal."
+    }
+  ]
 }

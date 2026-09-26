@@ -29,12 +29,14 @@ public struct EvalGoal: Sendable, Codable, Equatable {
     public var id: String
     public var goal: String
     public var maxSteps: Int
+    public var apps: [String]
     public var pass: EvalPass
 
-    public init(id: String, goal: String, maxSteps: Int = 20, pass: EvalPass = EvalPass()) {
+    public init(id: String, goal: String, maxSteps: Int = 20, apps: [String] = [], pass: EvalPass = EvalPass()) {
         self.id = id
         self.goal = goal
         self.maxSteps = maxSteps
+        self.apps = apps
         self.pass = pass
     }
 
@@ -43,13 +45,14 @@ public struct EvalGoal: Sendable, Codable, Equatable {
         id = try container.decode(String.self, forKey: .id)
         goal = try container.decode(String.self, forKey: .goal)
         maxSteps = try container.decodeIfPresent(Int.self, forKey: .maxSteps) ?? 20
+        apps = try container.decodeIfPresent([String].self, forKey: .apps) ?? []
         pass = try container.decodeIfPresent(EvalPass.self, forKey: .pass)
             ?? container.decodeIfPresent(EvalPass.self, forKey: .expect)
             ?? EvalPass()
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, goal, maxSteps, pass, expect
+        case id, goal, maxSteps, apps, pass, expect
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -57,22 +60,37 @@ public struct EvalGoal: Sendable, Codable, Equatable {
         try container.encode(id, forKey: .id)
         try container.encode(goal, forKey: .goal)
         try container.encode(maxSteps, forKey: .maxSteps)
+        try container.encode(apps, forKey: .apps)
         try container.encode(pass, forKey: .pass)
+    }
+
+    public var timeout: Duration { .seconds(maxSteps * 30) }
+
+    public func requiredAppsAreInstalled(in installed: [InstalledApp]) -> Bool {
+        apps.isEmpty || apps.contains { name in
+            installed.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        }
     }
 }
 
 public struct EvalPass: Sendable, Codable, Equatable {
     public var summaryContains: [String]
     public var summaryContainsAny: [String]
+    public var summaryMatchesRegex: String?
+    public var summaryMinLength: Int?
     public var frontmostApp: String?
 
     public init(
         summaryContains: [String] = [],
         summaryContainsAny: [String] = [],
+        summaryMatchesRegex: String? = nil,
+        summaryMinLength: Int? = nil,
         frontmostApp: String? = nil
     ) {
         self.summaryContains = summaryContains
         self.summaryContainsAny = summaryContainsAny
+        self.summaryMatchesRegex = summaryMatchesRegex
+        self.summaryMinLength = summaryMinLength
         self.frontmostApp = frontmostApp
     }
 
@@ -80,17 +98,22 @@ public struct EvalPass: Sendable, Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         summaryContains = try container.decodeIfPresent([String].self, forKey: .summaryContains) ?? []
         summaryContainsAny = try container.decodeIfPresent([String].self, forKey: .summaryContainsAny) ?? []
+        summaryMatchesRegex = try container.decodeIfPresent(String.self, forKey: .summaryMatchesRegex)
+        summaryMinLength = try container.decodeIfPresent(Int.self, forKey: .summaryMinLength)
         frontmostApp = try container.decodeIfPresent(String.self, forKey: .frontmostApp)
+            ?? container.decodeIfPresent(String.self, forKey: .finalApp)
     }
 
     enum CodingKeys: String, CodingKey {
-        case summaryContains, summaryContainsAny, frontmostApp
+        case summaryContains, summaryContainsAny, summaryMatchesRegex, summaryMinLength, frontmostApp, finalApp
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(summaryContains, forKey: .summaryContains)
         try container.encode(summaryContainsAny, forKey: .summaryContainsAny)
+        try container.encodeIfPresent(summaryMatchesRegex, forKey: .summaryMatchesRegex)
+        try container.encodeIfPresent(summaryMinLength, forKey: .summaryMinLength)
         try container.encodeIfPresent(frontmostApp, forKey: .frontmostApp)
     }
 }
@@ -129,6 +152,26 @@ extension EvalGoal {
                 reasons.append("frontmost \(actual ?? "nil") != \(expected)")
             }
         }
+        if let minLength = pass.summaryMinLength, summary.count < minLength {
+            reasons.append("summary shorter than \(minLength)")
+        }
+        if let pattern = pass.summaryMatchesRegex {
+            let range = NSRange(summary.startIndex..., in: summary)
+            let regex = try? NSRegularExpression(pattern: pattern)
+            if regex?.firstMatch(in: summary, options: [], range: range) == nil {
+                reasons.append("regex \(pattern) did not match")
+            }
+        }
         return EvalJudgement(passed: reasons.isEmpty, reasons: reasons)
+    }
+}
+
+extension EvalSuite {
+    /// `all`/`1` runs every goal; otherwise a comma-separated id list.
+    public func filtered(by selection: String) -> [EvalGoal] {
+        let trimmed = selection.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "all" || trimmed == "1" { return goals }
+        let ids = Set(trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        return goals.filter { ids.contains($0.id) }
     }
 }

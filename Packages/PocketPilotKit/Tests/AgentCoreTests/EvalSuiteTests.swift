@@ -27,8 +27,30 @@ import Testing
         #expect(!goal.judge(outcome: .abandoned(reason: "read-only: kept choosing changes"), frontmost: weather).passed)
     }
 
-    @Test func bundledSuiteLoads() throws {
+    @Test func bundledSuiteLoadsFifteenGoals() throws {
         let suite = try EvalSuite.load()
-        #expect(suite.goals.isEmpty)
+        #expect(suite.goals.count == 15)
+        #expect(suite.goals[0].id == "settings-about-version")
+        #expect(suite.goals[0].pass.frontmostApp == "Settings")
+        #expect(suite.goals[0].pass.summaryMatchesRegex == "\\d+\\.\\d+")
+        #expect(suite.filtered(by: "weather-today-high,clock-world-cities").map(\.id) == ["weather-today-high", "clock-world-cities"])
+        #expect(suite.filtered(by: "all").count == 15)
+    }
+
+    @Test func skipsWhenRequiredAppMissing() {
+        let goal = EvalGoal(id: "x", goal: "g", apps: ["Stocks"])
+        #expect(!goal.requiredAppsAreInstalled(in: [InstalledApp(name: "Clock", bundleID: "com.apple.mobiletimer")]))
+        #expect(goal.requiredAppsAreInstalled(in: [InstalledApp(name: "Stocks", bundleID: "com.apple.stocks")]))
+    }
+
+    @Test func regexAndMinLengthPass() {
+        let goal = EvalGoal(
+            id: "w",
+            goal: "g",
+            pass: EvalPass(summaryMatchesRegex: "-?\\d+\\s?°", summaryMinLength: 4, frontmostApp: "Weather")
+        )
+        let weather = FrontmostApp(name: "Weather", bundleID: "com.apple.weather")
+        #expect(goal.judge(outcome: .completed(summary: "High 24°"), frontmost: weather).passed)
+        #expect(!goal.judge(outcome: .completed(summary: "nice"), frontmost: weather).passed)
     }
 }
