@@ -74,11 +74,13 @@ public struct Agent: Sendable {
         let mentionedApps = apps.named(in: goal)
         for gesture in preparation {
             if isReadOnly && ReadOnlyPolicy.isMutating(gesture: gesture) {
+                log.notice("Skipping mutating preparation gesture in read-only mode: \(String(describing: gesture), privacy: .public)")
                 continue
             }
             try await device.perform(gesture)
             try await Task.sleep(for: settle)
         }
+        var consecutiveReadOnlyRefusals = 0
         while history.count < maxSteps {
             try Task.checkCancellation()
 
@@ -131,7 +133,8 @@ public struct Agent: Sendable {
             default: break
             }
 
-            var turn = Turn(decision: decision, failure: history.repeatedFailure(of: decision.action))
+            let readOnlyRefusal = isReadOnly ? ReadOnlyPolicy.refusal(for: decision.action, on: step.screen) : nil
+            var turn = Turn(decision: decision, failure: readOnlyRefusal ?? history.repeatedFailure(of: decision.action))
             if turn.failure == nil {
                 turn.failure = try await perform(decision.action, on: step.screen, apps: apps, isReadOnly: isReadOnly)
             }
@@ -139,6 +142,15 @@ public struct Agent: Sendable {
                 onEvent(.failed(decision.action, reason: failure))
             }
             history.append(turn)
+
+            if readOnlyRefusal != nil {
+                consecutiveReadOnlyRefusals += 1
+                if consecutiveReadOnlyRefusals >= 5 {
+                    return .abandoned(reason: "read-only: kept choosing changes")
+                }
+            } else {
+                consecutiveReadOnlyRefusals = 0
+            }
             try await Task.sleep(for: settle)
         }
         return .outOfSteps

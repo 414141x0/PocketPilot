@@ -12,6 +12,8 @@ import Testing
         #expect(RunPolicy(readOnly: true).isReadOnly(for: ""))
         #expect(RunPolicy.default.isReadOnly(for: "Open the Clock app, then finish. Do not change anything."))
         #expect(RunPolicy.default.isReadOnly(for: "Open Clock, don't change anything"))
+        #expect(RunPolicy.default.isReadOnly(for: "Open Clock, do not modify anything"))
+        #expect(RunPolicy.default.isReadOnly(for: "Open Clock, don't modify alarms"))
         #expect(RunPolicy.default.isReadOnly(for: "Open Clock (read-only)"))
         #expect(RunPolicy.default.isReadOnly(for: "Open Clock read only please"))
         #expect(!RunPolicy.default.isReadOnly(for: "Open Clock and turn on the alarm"))
@@ -61,9 +63,17 @@ import Testing
         let addBtn = Element(id: 5, role: .button, label: "+", frame: Rect(x: 0.85, y: 0.05, width: 0.1, height: 0.04))
         let checkBtn = Element(id: 6, role: .button, label: "✓", frame: Rect(x: 0.85, y: 0.05, width: 0.1, height: 0.04))
         let repeatRow = Element(id: 7, role: .cell, label: "Repeat", frame: Rect(x: 0.1, y: 0.4, width: 0.8, height: 0.05))
-        let safeAlarmsTab = Element(id: 8, role: .tab, label: "Alarms", frame: Rect(x: 0.3, y: 0.9, width: 0.2, height: 0.05))
+        let okBtn = Element(id: 8, role: .button, label: "OK", frame: Rect(x: 0.1, y: 0.1, width: 0.2, height: 0.05))
+        let yesBtn = Element(id: 9, role: .button, label: "Yes", frame: Rect(x: 0.3, y: 0.1, width: 0.2, height: 0.05))
+        let eraseBtn = Element(id: 10, role: .button, label: "Erase All Content", frame: Rect(x: 0.1, y: 0.7, width: 0.8, height: 0.05))
+        let incBtn = Element(id: 11, role: .button, label: "Increment", frame: Rect(x: 0.5, y: 0.3, width: 0.2, height: 0.05))
+        let decBtn = Element(id: 12, role: .button, label: "Decrement", frame: Rect(x: 0.7, y: 0.3, width: 0.2, height: 0.05))
+        let safeAlarmsTab = Element(id: 13, role: .tab, label: "Alarms", frame: Rect(x: 0.3, y: 0.9, width: 0.2, height: 0.05))
 
-        let screen = makeDummyScreen(elements: [saveBtn, doneBtn, editBtn, deleteBtn, addBtn, checkBtn, repeatRow, safeAlarmsTab])
+        let screen = makeDummyScreen(elements: [
+            saveBtn, doneBtn, editBtn, deleteBtn, addBtn, checkBtn,
+            repeatRow, okBtn, yesBtn, eraseBtn, incBtn, decBtn, safeAlarmsTab
+        ])
 
         #expect(ReadOnlyPolicy.refusal(for: .tap(.element(1)), on: screen) != nil)
         #expect(ReadOnlyPolicy.refusal(for: .tap(.element(2)), on: screen) != nil)
@@ -72,7 +82,36 @@ import Testing
         #expect(ReadOnlyPolicy.refusal(for: .tap(.element(5)), on: screen) != nil)
         #expect(ReadOnlyPolicy.refusal(for: .tap(.element(6)), on: screen) != nil)
         #expect(ReadOnlyPolicy.refusal(for: .tap(.element(7)), on: screen) != nil)
-        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(8)), on: screen) == nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(8)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(9)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(10)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(11)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(12)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(13)), on: screen) == nil)
+    }
+
+    @Test func refusesTapsOnSelectedNonTabElements() {
+        let saturdayCell = Element(id: 1, role: .cell, label: "Saturday", frame: Rect(x: 0.1, y: 0.3, width: 0.8, height: 0.05), traits: [.selected])
+        let selectedTab = Element(id: 2, role: .tab, label: "Alarms", frame: Rect(x: 0.1, y: 0.9, width: 0.2, height: 0.05), traits: [.selected])
+        let unselectedCell = Element(id: 3, role: .cell, label: "Sunday", frame: Rect(x: 0.1, y: 0.4, width: 0.8, height: 0.05))
+
+        let screen = makeDummyScreen(elements: [saturdayCell, selectedTab, unselectedCell])
+
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(1)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(2)), on: screen) == nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(3)), on: screen) == nil)
+    }
+
+    @Test func refusesTapsOnUnlabeledButtons() {
+        let emptyBtn = Element(id: 1, role: .button, label: "", frame: Rect(x: 0.1, y: 0.1, width: 0.1, height: 0.1))
+        let whitespaceBtn = Element(id: 2, role: .button, label: "   ", frame: Rect(x: 0.3, y: 0.1, width: 0.1, height: 0.1))
+        let labeledBtn = Element(id: 3, role: .button, label: "Cancel", frame: Rect(x: 0.5, y: 0.1, width: 0.2, height: 0.1))
+
+        let screen = makeDummyScreen(elements: [emptyBtn, whitespaceBtn, labeledBtn])
+
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(1)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(2)), on: screen) != nil)
+        #expect(ReadOnlyPolicy.refusal(for: .tap(.element(3)), on: screen) == nil)
     }
 
     @Test func refusesPredictiveAndKeyboardAreaTaps() {
@@ -124,6 +163,17 @@ import Testing
         #expect(ReadOnlyPolicy.refusal(for: .scroll(.down, in: nil), on: screen) == nil)
     }
 
+    @Test func preparationGesturesSanitization() {
+        #expect(ReadOnlyPolicy.isMutating(gesture: .longPress(Point(x: 0.5, y: 0.5))))
+        #expect(ReadOnlyPolicy.isMutating(gesture: .type("abc")))
+        #expect(ReadOnlyPolicy.isMutating(gesture: .selectAll))
+        #expect(ReadOnlyPolicy.isMutating(gesture: .key(.return)))
+        #expect(ReadOnlyPolicy.isMutating(gesture: .press(.lock)))
+        #expect(!ReadOnlyPolicy.isMutating(gesture: .press(.home)))
+        #expect(!ReadOnlyPolicy.isMutating(gesture: .tap(Point(x: 0.5, y: 0.5))))
+        #expect(!ReadOnlyPolicy.isMutating(gesture: .launch(bundleID: "com.apple.mobilecal")))
+    }
+
     @Test func briefIncludesReadOnlyNotice() {
         let screen = makeDummyScreen()
         let readOnlyStep = Step(goal: "Open Clock", screen: screen, isReadOnly: true)
@@ -143,6 +193,29 @@ import Testing
 
         let outcome = try await agent.run("Open Clock and do not change anything")
         #expect(outcome == .abandoned(reason: "refused"))
+
+        // Verify the device NEVER received a tap gesture
+        let performed = await device.performedGestures
+        #expect(performed.isEmpty)
+    }
+
+    @Test func agentAbandonsAfterFiveConsecutiveRefusals() async throws {
+        let saveBtn = Element(id: 1, role: .button, label: "Save", frame: Rect(x: 0.7, y: 0.2, width: 0.2, height: 0.1))
+        let device = ReadOnlyTestDevice(elements: [saveBtn])
+
+        // Pilot persists in tapping Save 6 times
+        let pilot = TestPilot(
+            .tap(.element(1)),
+            .tap(.element(1)),
+            .tap(.element(1)),
+            .tap(.element(1)),
+            .tap(.element(1)),
+            .tap(.element(1))
+        )
+        let agent = Agent(device: device, pilot: pilot, policy: .readOnly, settle: .zero)
+
+        let outcome = try await agent.run("Open Clock and do not modify anything")
+        #expect(outcome == .abandoned(reason: "read-only: kept choosing changes"))
 
         // Verify the device NEVER received a tap gesture
         let performed = await device.performedGestures

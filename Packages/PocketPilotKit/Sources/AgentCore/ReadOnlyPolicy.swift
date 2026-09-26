@@ -6,17 +6,25 @@ import Foundation
 /// - Typing and keyboard key presses
 /// - Dragging and long pressing
 /// - Volume and lock hardware buttons (home is allowed for navigation)
-/// - Tapping elements with mutating roles: toggle, textField, keyboardKey, slider (including pickers/steppers)
-/// - Tapping elements with mutating labels (whole-word matching): Save, Done, ✓, Delete, Remove, Edit, Add, +, Send, Buy, Confirm, Allow, Clear, Reset, etc.
+/// - Tapping elements with mutating roles: toggle, textField, keyboardKey, slider (including pickers/steppers/segmented controls)
+/// - Tapping elements with mutating labels (whole-word matching): Save, Done, ✓, Delete, Remove, Edit, Add, +, Send, Buy, Confirm, Allow, Clear, Reset, Increment, Decrement, OK, Yes, Erase, etc.
+/// - Tapping selected non-tab elements (e.g. checkmark or repeat day cells)
+/// - Tapping unlabeled buttons (icon-only actions like trash or plus)
 /// - Tapping predictive-bar words or keyboard area elements when a keyboard is active
 /// - Point-taps landing inside the bounding frame of any forbidden element
 /// - Scrolling inside sliders or pickers
+///
+/// Known limitations:
+/// - Elements in the lower half of the screen (y >= 0.50) when a keyboard is active may yield false positive
+///   refusals on bottom-half buttons, and will miss floating keyboards (e.g. on iPad).
+/// - After 5 consecutive refusals, the agent run is abandoned.
 public enum ReadOnlyPolicy {
     /// Mutating words that, when appearing as whole words in an element's label, indicate a mutating action.
     public static let mutatingKeywords: Set<String> = [
         "save", "done", "delete", "remove", "edit", "add", "send",
         "buy", "purchase", "confirm", "allow", "clear", "reset",
-        "create", "compose", "repeat", "toggle", "switch", "enable", "disable"
+        "create", "compose", "repeat", "toggle", "switch", "enable", "disable",
+        "increment", "decrement", "ok", "yes", "erase"
     ]
 
     /// Symbols indicating mutation when used as an action label.
@@ -102,6 +110,11 @@ public enum ReadOnlyPolicy {
             return nil
         }
 
+        // Non-tab elements with .selected trait (e.g. checkmark cells, selected options) are mutating
+        if element.traits.contains(.selected) && element.role != .tab {
+            return "Interacting with selected element '\(element.label)' is forbidden in read-only mode."
+        }
+
         // 1. Role-based checks
         switch element.role {
         case .toggle:
@@ -123,6 +136,9 @@ public enum ReadOnlyPolicy {
 
         // 3. Mutating label checks
         let trimmed = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if element.role == .button && trimmed.isEmpty {
+            return "Interacting with unlabeled button is forbidden in read-only mode."
+        }
         if mutatingSymbols.contains(trimmed) {
             return "Action '\(element.label)' is forbidden in read-only mode."
         }
@@ -147,9 +163,9 @@ public enum ReadOnlyPolicy {
         switch gesture {
         case .press(let button):
             return button != .home
-        case .type, .selectAll, .key:
+        case .type, .selectAll, .key, .longPress:
             return true
-        case .tap, .swipe, .longPress, .launch:
+        case .tap, .swipe, .launch:
             return false
         }
     }

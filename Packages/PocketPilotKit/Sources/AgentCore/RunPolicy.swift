@@ -19,6 +19,9 @@ public struct RunPolicy: Sendable, Hashable {
         return lower.contains("do not change")
             || lower.contains("don't change")
             || lower.contains("dont change")
+            || lower.contains("do not modify")
+            || lower.contains("don't modify")
+            || lower.contains("dont modify")
             || lower.contains("read-only")
             || lower.contains("read only")
     }

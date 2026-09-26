@@ -171,7 +171,7 @@ extension Element.Role {
             (["folder", "application", "app icon"], .button),
             (["tab"], .tab),
             (["field", "search"], .textField),
-            (["slider", "adjustable", "picker", "stepper", "wheel"], .slider),
+            (["slider", "adjustable", "picker", "stepper", "wheel", "segment"], .slider),
             (["link"], .link),
             (["key"], .keyboardKey),
             (["button"], .button),
