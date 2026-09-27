@@ -23,7 +23,11 @@ let package = Package(
         .package(url: "https://github.com/MacPaw/OpenAI.git", from: "0.5.1"),
     ],
     targets: [
-        .target(name: "AgentCore", swiftSettings: settings),
+        .target(
+            name: "AgentCore",
+            resources: [.process("EvalSuite.json")],
+            swiftSettings: settings
+        ),
         .target(name: "DeviceLink", dependencies: ["AgentCore", "PilotBridge"], swiftSettings: settings),
         // Built by Scripts/build-xcframework.sh.
         .binaryTarget(name: "PilotBridge", path: "Frameworks/PilotBridge.xcframework"),
