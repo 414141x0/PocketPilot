@@ -66,8 +66,9 @@ public struct EvalGoal: Sendable, Codable, Equatable {
 
     public var timeout: Duration { .seconds(maxSteps * 30) }
 
+    /// Every app the goal needs must be installed; a cross-app goal missing one is skipped, not failed.
     public func requiredAppsAreInstalled(in installed: [InstalledApp]) -> Bool {
-        apps.isEmpty || apps.contains { name in
+        apps.allSatisfy { name in
             installed.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         }
     }

@@ -3,6 +3,7 @@ import AgentCore
 import DeviceLink
 import Foundation
 import OSLog
+import Synchronization
 
 /// Runs the E1 eval suite from Home under read-only policy.
 /// Debug builds only. Launch with `POCKETPILOT_EVAL=all` or `POCKETPILOT_EVAL=<id>,<id>`.
@@ -19,9 +20,14 @@ enum EvalProbe {
                 log.error("no eval goals selected (POCKETPILOT_EVAL=\(selection, privacy: .public))")
                 return
             }
-            let phone = try await Phone.connect(pairing: pairing)
+            var phone = try await Phone.connect(pairing: pairing)
             let installed = (try? await phone.installedApps()) ?? []
-            var results: [Result] = []
+            let pilotName = String(describing: type(of: pilot))
+            let reportURL = try reportURL()
+            // Written after every goal, so a lost session mid-suite keeps what already ran.
+            var results: [Result] = [] {
+                didSet { try? write(results, pilot: pilotName, to: reportURL) }
+            }
             for (index, goal) in goals.enumerated() {
                 if index > 0 {
                     try? await phone.perform(.press(.home))
@@ -33,13 +39,16 @@ enum EvalProbe {
                     continue
                 }
                 StepRecorder.reset()
-                var steps = 0
+                // Counted from the agent's event handler, which runs off this task.
+                let observed = Mutex(0)
+                var steps: Int { observed.withLock { $0 } }
                 let started = ContinuousClock.now
                 let outcome: Agent.Outcome
+                let device = phone
                 do {
                     outcome = try await withTimeout(goal.timeout) {
                         try await Agent(
-                            device: phone,
+                            device: device,
                             pilot: pilot,
                             policy: .readOnly,
                             maxSteps: goal.maxSteps,
@@ -47,7 +56,7 @@ enum EvalProbe {
                             startsAt: "Home Screen"
                         ).run(goal.goal) { event in
                             if case .observed(let step) = event {
-                                steps += 1
+                                observed.withLock { $0 += 1 }
                                 Task { await StepRecorder.record(step) }
                             }
                         }
@@ -57,9 +66,17 @@ enum EvalProbe {
                     results.append(Result(id: goal.id, passed: false, skipped: false, outcome: "timeout", summary: "timeout", steps: steps, seconds: secondsValue, frontmost: nil, reasons: ["timeout"]))
                     log.notice("FAIL \(goal.id, privacy: .public) timeout after \(secondsValue, privacy: .public)s")
                     continue
+                } catch {
+                    // A lost session fails this goal only; reconnect and carry on with the rest.
+                    let secondsValue = elapsedSeconds(since: started)
+                    let reason = "error: \(error)"
+                    results.append(Result(id: goal.id, passed: false, skipped: false, outcome: reason, summary: reason, steps: steps, seconds: secondsValue, frontmost: nil, reasons: [reason]))
+                    log.notice("FAIL \(goal.id, privacy: .public) \(reason, privacy: .public)")
+                    if let fresh = try? await Phone.connect(pairing: pairing) { phone = fresh }
+                    continue
                 }
                 let secondsValue = elapsedSeconds(since: started)
-                let frontmost = try? await phone.frontmostApp()
+                let frontmost = (try? await phone.frontmostApp())?.resolved(using: installed)
                 let judgement = goal.judge(outcome: outcome, frontmost: frontmost)
                 let summary: String
                 switch outcome {
@@ -81,8 +98,8 @@ enum EvalProbe {
                 let mark = judgement.passed ? "PASS" : "FAIL"
                 log.notice("\(mark, privacy: .public) \(goal.id, privacy: .public) \(steps, privacy: .public) steps \(secondsValue, privacy: .public)s \(frontmost?.briefName ?? "nil", privacy: .public) — \(summary, privacy: .public)")
             }
-            try write(results, pilot: String(describing: type(of: pilot)))
-            log.notice("\(summaryLine(pilot: String(describing: type(of: pilot)), results: results), privacy: .public)")
+            log.notice("wrote \(reportURL.path, privacy: .public)")
+            log.notice("\(summaryLine(pilot: pilotName, results: results), privacy: .public)")
         } catch {
             log.error("eval failed: \(String(describing: error), privacy: .public)")
         }
@@ -137,18 +154,20 @@ enum EvalProbe {
         }
     }
 
-    private static func write(_ results: [Result], pilot: String) throws {
+    /// tmp/eval/<timestamp>.json for this suite run.
+    private static func reportURL() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appending(path: "eval")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         let name = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let url = directory.appending(path: "\(name).json")
+        return directory.appending(path: "\(name).json")
+    }
+
+    private static func write(_ results: [Result], pilot: String, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let payload = Report(pilot: pilot, results: results)
-        try encoder.encode(payload).write(to: url)
-        Logger(subsystem: "dev.typealias.PocketPilot", category: "Eval").notice("wrote \(url.path, privacy: .public)")
+        try encoder.encode(Report(pilot: pilot, results: results)).write(to: url, options: .atomic)
     }
 
     private struct Report: Encodable {
